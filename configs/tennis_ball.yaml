@@ -1,0 +1,7 @@
+path: dataset/Tennis Ball Obj Det.v1i.yolo26
+train: train/images
+val: valid/images
+test: test/images
+
+names:
+  0: tennis_ball
