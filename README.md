@@ -2,8 +2,8 @@
 
 一个用于网球目标检测的最小项目脚手架，默认按 YOLO 风格工作流组织：
 
-- 训练入口：`python -m tennis_train.train`
-- 推理入口：`python -m tennis_train.predict`
+- 训练入口：`python -m src.tennis_train.train`
+- 推理入口：`python -m src.tennis_train.predict`
 - 数据集配置：`configs/tennis.yaml`
 
 这个项目对模型实现做了一层适配：
@@ -45,17 +45,17 @@ pip install -e .
 
 GPU/MPS 训练（Apple Silicon Mac）：
 ```bash
-python -m tennis_train.train --model yolov8n.pt --data configs/tennis.yaml --epochs 100 --device mps
+python -m src.tennis_train.train --model yolov8n.pt --data configs/tennis_ball.yaml --epochs 100 --device mps
 ```
 
 GPU 训练（NVIDIA CUDA）：
 ```bash
-python -m tennis_train.train --model yolov8n.pt --data configs/tennis.yaml --epochs 100 --device 0
+python -m src.tennis_train.train --model yolov8n.pt --data configs/tennis_ball.yaml --epochs 100 --device 0
 ```
 
 CPU 训练：
 ```bash
-python -m tennis_train.train --model yolov8n.pt --data configs/tennis.yaml --epochs 100 --device cpu
+python -m src.tennis_train.train --model yolov8n.pt --data configs/tennis_ball.yaml --epochs 100 --device cpu
 ```
 
 常用参数：
@@ -72,7 +72,7 @@ python -m tennis_train.train --model yolov8n.pt --data configs/tennis.yaml --epo
 ## 5. 运行推理
 
 ```bash
-python -m tennis_train.predict \
+python -m src.tennis_train.predict \
   --model runs/tennis/train/weights/best.pt \
   --source demo.jpg \
   --conf 0.25 \
