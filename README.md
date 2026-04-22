@@ -71,13 +71,24 @@ python -m src.tennis_train.train --model yolov8n.pt --data configs/tennis_ball.y
 
 ## 5. 运行推理
 
+图片/视频推理：
 ```bash
 python -m src.tennis_train.predict \
-  --model runs/tennis/train/weights/best.pt \
+  --model runs/detect/runs/tennis/train/weights/best_int8.onnx \
   --source demo.jpg \
   --conf 0.25 \
   --save
 ```
+
+摄像头实时推理：
+```bash
+python scripts/camera_inference.py \
+  --model runs/detect/runs/tennis/train/weights/best_int8.onnx \
+  --camera 0 \
+  --conf 0.25 \
+  --device cpu
+```
+按 `q` 键退出。
 
 ## 6. 常见调整
 
