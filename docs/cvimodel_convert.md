@@ -87,6 +87,11 @@ model_deploy.py \
   --model yolov8n_tennis_cv181x_int8.cvimodel
 ```
 
+```
+model_deploy.py --mlir yolov8n_tennis.mlir --quantize INT8 --calibration_table yolov8n_cali_table --quantize_table shape_pattern_qtable --processor cv181x --tolerance 0.85,0.45 --fuse_preprocess --customization_format RGB_PLANAR --model yolov8n_tennis_v2.cvimodel
+
+```
+
 转换完成后输出文件：`tpu_convert/yolov8n_tennis_cv181x_int8.cvimodel`
 
 ---
