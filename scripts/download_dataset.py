@@ -12,7 +12,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-DEST = Path("dataset")
+DEST = Path(__file__).parent.parent / "dataset"
 REPO_ID = "bobodai/tennis"
 
 

@@ -1,6 +1,15 @@
 # Tennis Train
 
-一个用于网球目标检测的最小项目脚手架，默认按 YOLO 风格工作流组织：
+一个用于网球目标检测的最小项目脚手架，默认按 YOLO 风格工作流组织：可以实现模型量化转换等功能。
+
+辰龙操作系统训练营，项目三模型量化实践，就是基于代码中提供的数据集，进行量化，可以使用任何yolo版本，任何量化方式，要实现的目标就是获得更快的推理速度和更好的精度的模型
+
+ 评估标准
+  量化的成功与否主要看三个指标：
+  - mAP 损失：INT8 量化后 mAP50 下降通常应控制在 1% 以内，超过 2%
+  说明量化质量有问题
+  - 推理加速比：相比 FP32，INT8 相同硬件下推理速度应提升 2-4x
+  - 模型大小：INT8 模型约为 FP32 的 1/4
 
 - 训练入口：`python -m src.tennis_train.train`
 - 推理入口：`python -m src.tennis_train.predict`
@@ -23,14 +32,9 @@ pip install -r requirements.txt
 
 ## 2. 当前数据集
 
-项目已经接入你放进来的数据集：
+运行 scripts 下的数据集并解压压缩包。
 
-```text
-dataset/Tennis Ball Obj Det.v1i.yolo26/
-  train/
-  valid/
-  test/
-```
+注意和配置文件夹保持一致
 
 默认使用的配置是 `configs/tennis.yaml`，类别只有一个：
 
