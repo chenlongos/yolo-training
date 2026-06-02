@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import argparse
 
-from .adapter import ModelAdapter
+from src.tennis_train.adapter import ModelAdapter
 
 
 def build_parser() -> argparse.ArgumentParser:

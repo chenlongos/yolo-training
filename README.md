@@ -1,17 +1,24 @@
 # Tennis Train
 
-一个用于网球目标检测的最小项目脚手架，默认按 YOLO 风格工作流组织：
+一个用于网球目标检测的最小项目脚手架，默认按 YOLO 风格工作流组织：可以实现模型量化转换等功能。
+```
+辰龙操作系统训练营，项目三模型量化实践，就是基于代码中提供的数据集，进行量化，可以使用任何yolo版本，任何量化方式，要实现的目标就是获得更快的推理速度和更好的精度的模型
+
+ 评估标准
+  量化的成功与否主要看三个指标：
+    
+- mAP 损失：INT8 量化后 mAP50 下降通常应控制在 1% 以内，超过 2%
+  说明量化质量有问题
+- 推理加速比：相比 FP32，INT8 相同硬件下推理速度应提升 2-4x
+- 模型大小：INT8 模型约为 FP32 的 1/4
+
+```
 
 - 训练入口：`python -m src.tennis_train.train`
 - 推理入口：`python -m src.tennis_train.predict`
 - 数据集配置：`configs/tennis.yaml`
 
-这个项目对模型实现做了一层适配：
-
-- 优先尝试导入 `yolo26`
-- 如果环境里没有 `yolo26`，回退到 `ultralytics`
-
-这样你后续只需要准备好对应权重文件和数据集，就可以直接训练或推理。
+这个项目目前基于yolo26实现做了一层适配，可以选用其他模型：
 
 ## 1. 安装依赖
 
@@ -23,14 +30,9 @@ pip install -r requirements.txt
 
 ## 2. 当前数据集
 
-项目已经接入你放进来的数据集：
+运行 scripts 下的数据集并解压压缩包。
 
-```text
-dataset/Tennis Ball Obj Det.v1i.yolo26/
-  train/
-  valid/
-  test/
-```
+注意和配置文件夹保持一致
 
 默认使用的配置是 `configs/tennis.yaml`，类别只有一个：
 
@@ -71,13 +73,24 @@ python -m src.tennis_train.train --model yolov8n.pt --data configs/tennis_ball.y
 
 ## 5. 运行推理
 
+图片/视频推理：
 ```bash
 python -m src.tennis_train.predict \
-  --model runs/tennis/train/weights/best.pt \
+  --model runs/detect/runs/tennis/train/weights/best_int8.onnx \
   --source demo.jpg \
   --conf 0.25 \
   --save
 ```
+
+摄像头实时推理：
+```bash
+python scripts/camera_inference.py \
+  --model runs/detect/runs/tennis/train/weights/best_int8.onnx \
+  --camera 0 \
+  --conf 0.25 \
+  --device cpu
+```
+按 `q` 键退出。
 
 ## 6. 常见调整
 

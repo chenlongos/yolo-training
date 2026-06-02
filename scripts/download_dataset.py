@@ -16,7 +16,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-
 WORKSPACE = "bobo-an"
 PROJECT = "tennis-ball-obj-det-7ojhd"
 VERSION = 1
