@@ -1,47 +1,54 @@
 """
-从 HuggingFace 下载网球检测数据集。
+从 Roboflow 下载网球检测数据集。
 
 使用方法：
-    python scripts/download_dataset.py
+    python scripts/download_dataset.py --api-key <YOUR_KEY>
 
-数据集：https://huggingface.co/datasets/bobodai/tennis
+如何获取 API Key：
+    1. 注册 https://roboflow.com
+    2. 进入 Settings -> Roboflow API -> Private API Key
+    3. 复制后传入 --api-key 参数
 """
 from __future__ import annotations
 
+import argparse
 import subprocess
 import sys
 from pathlib import Path
 
-DEST = Path(__file__).parent.parent / "dataset"
-REPO_ID = "bobodai/tennis"
+WORKSPACE = "bobo-an"
+PROJECT = "tennis-ball-obj-det-7ojhd"
+VERSION = 1
+FORMAT = "yolov8"
+DEST = Path("dataset")
 
 
-def ensure_huggingface_hub() -> None:
+def ensure_roboflow() -> None:
     try:
-        import huggingface_hub  # noqa: F401
+        import roboflow  # noqa: F401
     except ImportError:
-        print("安装 huggingface_hub 包...")
+        print("安装 roboflow 包...")
         subprocess.check_call(
-            [sys.executable, "-m", "pip", "install", "huggingface_hub", "-q"]
+            [sys.executable, "-m", "pip", "install", "roboflow", "-q"]
         )
 
 
-def download() -> Path:
-    from huggingface_hub import snapshot_download
+def download(api_key: str) -> Path:
+    from roboflow import Roboflow  # type: ignore
 
-    print(f"从 HuggingFace 下载数据集: {REPO_ID}")
-    location = snapshot_download(
-        repo_id=REPO_ID,
-        repo_type="dataset",
-        local_dir=str(DEST),
-        local_dir_use_symlinks=False,
-    )
-    return Path(location)
+    rf = Roboflow(api_key=api_key)
+    project = rf.workspace(WORKSPACE).project(PROJECT)
+    dataset = project.version(VERSION).download(FORMAT, location=str(DEST))
+    return Path(dataset.location)
 
 
 def main() -> None:
-    ensure_huggingface_hub()
-    location = download()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--api-key", required=True, help="Roboflow API Key")
+    args = parser.parse_args()
+
+    ensure_roboflow()
+    location = download(args.api_key)
     print(f"\n数据集已下载到: {location}")
     print("请确认 configs/tennis_ball.yaml 中的 path 与以上路径一致。")
 

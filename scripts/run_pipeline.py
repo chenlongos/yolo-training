@@ -5,7 +5,7 @@
     python scripts/run_pipeline.py [--epochs 100] [--device cpu] [--calibration-images 数量]
 
 前提：
-    数据集已放置到 dataset/ 目录（运行 python scripts/download_dataset.py 获取）
+    数据集已放置到 dataset/ 目录（运行 scripts/download_dataset.py 获取）
 """
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from pathlib import Path
 # 确保 src 包路径可找到（pip install -e . 后通常不需要）
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from src.tennis_train.adapter import ModelAdapter
+from tennis_train.adapter import ModelAdapter
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -87,7 +87,7 @@ def main() -> None:
         if not data_path.exists():
             sys.exit(
                 f"数据集配置文件不存在: {data_path}\n"
-                "请先运行: python scripts/download_dataset.py"
+                "请先运行: python scripts/download_dataset.py --api-key <YOUR_KEY>"
             )
 
         print("=" * 60)
