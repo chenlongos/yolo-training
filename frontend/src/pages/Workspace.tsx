@@ -99,18 +99,6 @@ export default function Workspace() {
       <Sidebar nav={nav} collapsed={!!activeProject} onNav={key => { setNav(key); setActiveProject(''); }} />
 
       <div className="flex-1 flex flex-col bg-gray-50 overflow-auto">
-        <header className="bg-white border-b border-gray-200 px-8 py-4 shrink-0 flex items-center justify-between">
-          <h1 className="text-2xl font-semibold text-gray-900">{nav === 'projects' ? '项目' : nav === 'models' ? '模型' : '模型数据广场'}</h1>
-          <div className="flex items-center gap-3">
-            <select value={activeProject} onChange={e => { setActiveProject(e.target.value); setActiveDataset(''); setRightPanel(null); }}
-              className="text-sm border border-gray-300 rounded-lg px-3 py-2 text-gray-700 outline-none focus:ring-2 focus:ring-[#7c3aed]/20 focus:border-[#7c3aed]">
-              <option value="">选择项目...</option>
-              {projectList.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
-            <button onClick={() => setShowNewProject(true)} className="px-4 py-2.5 bg-[#7c3aed] text-white rounded-lg text-sm font-medium hover:bg-[#6d28d9] transition-colors">新建项目</button>
-          </div>
-        </header>
-
         <div className="flex-1 flex overflow-hidden">
           {activeProject && nav === 'projects' && (
             <ProjectSidebar
@@ -138,7 +126,7 @@ export default function Workspace() {
                 {rightPanel === 'data' && <DataPanel datasets={activeDatasets} onSelect={id => { setActiveDataset(id); setRightPanel('dataset'); }} onNewDataset={() => setShowNewDataset(true)} />}
                 {rightPanel === 'dataset' && activeDataset && (
                   <ImageGrid dataset={activeDatasets.find(d => d.id === activeDataset)!} images={imgList} classes={classes}
-                    page={imgPage} total={imgTotal} onPage={setImgPage}
+                    page={imgPage} total={imgTotal} onPage={setImgPage} onSearch={() => {}}
                     onAnnotate={id => openAnnotator(id)} onTrain={() => setTrainOpen(true)}
                     onImageClick={idx => openAnnotator(activeDataset, idx)} />
                 )}

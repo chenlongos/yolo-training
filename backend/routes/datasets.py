@@ -21,7 +21,8 @@ def _own_ds(did: str, user: dict) -> dict:
 def _own_img(iid: str, user: dict) -> dict:
     img = db["images"].get(iid)
     if not img: raise HTTPException(404, detail="Image not found")
-    return _own_ds(img["dataset_id"], user)
+    _own_ds(img["dataset_id"], user)
+    return img
 
 # Dataset CRUD
 @router.get("/projects/{project_id}/datasets")
@@ -61,7 +62,13 @@ def list_images(dataset_id: str, page: int = Query(1, ge=1), per_page: int = Que
     if status_filter: imgs = [i for i in imgs if i.get("status") == status_filter]
     total = len(imgs)
     start = (page - 1) * per_page
-    return {"items": imgs[start:start + per_page], "total": total, "page": page, "per_page": per_page}
+    result = []
+    for i in imgs[start:start + per_page]:
+        i = dict(i)
+        i["thumbnail_url"] = f"/api/v1/images/{i['id']}/thumbnail"
+        i["image_url"] = f"/api/v1/images/{i['id']}/file"
+        result.append(i)
+    return {"items": result, "total": total, "page": page, "per_page": per_page}
 
 @router.get("/images/{image_id}/file")
 def get_file(image_id: str, user: dict = Depends(get_current_user)):
@@ -72,8 +79,15 @@ def get_file(image_id: str, user: dict = Depends(get_current_user)):
 @router.get("/images/{image_id}/thumbnail")
 def get_thumb(image_id: str, user: dict = Depends(get_current_user)):
     img = _own_img(image_id, user)
-    path = storage_service.backend._full_path(img.get("thumbnail_path") or img["storage_path"])
-    return FileResponse(path) if path.exists() else HTTPException(404, detail="Not found")
+    thumb = img.get("thumbnail_path")
+    path = storage_service.backend._full_path(thumb) if thumb else None
+    if path and path.exists():
+        return FileResponse(path, media_type="image/jpeg")
+    # Fallback to full image
+    fp = storage_service.backend._full_path(img["storage_path"])
+    if fp.exists():
+        return FileResponse(fp, media_type="image/jpeg")
+    raise HTTPException(404, detail="Not found")
 
 @router.get("/images/{image_id}")
 def get_image_detail(image_id: str, user: dict = Depends(get_current_user)):

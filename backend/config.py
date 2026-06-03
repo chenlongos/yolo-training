@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/1"
 
     # File Storage
-    STORAGE_ROOT: str = str(Path(__file__).resolve().parent.parent.parent / "storage")
+    STORAGE_ROOT: str = str(Path(__file__).resolve().parent.parent / "storage")
     UPLOAD_MAX_SIZE_MB: int = 50
     THUMBNAIL_SIZE: int = 256
 
