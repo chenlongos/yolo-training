@@ -128,7 +128,13 @@ export default function Workspace() {
                   <ImageGrid dataset={activeDatasets.find(d => d.id === activeDataset)!} images={imgList} classes={classes}
                     page={imgPage} total={imgTotal} onPage={setImgPage} onSearch={() => {}}
                     onAnnotate={id => openAnnotator(id)} onTrain={() => setTrainOpen(true)}
-                    onImageClick={idx => openAnnotator(activeDataset, idx)} />
+                    onImageClick={idx => openAnnotator(activeDataset, idx)}
+                    onDeleteImages={async (ids) => {
+                      for (const id of ids) {
+                        await fetch(`/api/v1/images/${id}`, { method: 'DELETE' });
+                      }
+                      if (activeDataset) datasets.images(activeDataset, imgPage).then(d => { setImgList(d.items); setImgTotal(d.total); });
+                    }} />
                 )}
                 {rightPanel === 'models' && <ModelPanel models={activeModels} onSelect={id => { setActiveModelId(id); setRightPanel('modelDetail'); }} />}
                 {rightPanel === 'modelDetail' && activeModelObj && <ModelDetail model={activeModelObj} />}
