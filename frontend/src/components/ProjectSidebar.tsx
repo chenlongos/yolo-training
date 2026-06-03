@@ -1,7 +1,7 @@
 import { UploadCloud, Edit3, Database, Tag, Cpu, Box, Rocket, ChevronDown, Plus, MoreHorizontal, Layout } from 'lucide-react';
 import type { Dataset, TrainedModel } from '../types';
 
-export type RightPanel = 'upload' | 'data' | 'dataset' | 'models' | 'modelDetail' | null;
+export type RightPanel = 'upload' | 'data' | 'dataset' | 'models' | 'modelDetail' | 'train' | null;
 
 interface NavItemData {
   label: string;
@@ -59,7 +59,7 @@ export default function ProjectSidebar(props: Props) {
     {
       title: 'Models',
       items: [
-        { label: '训练', icon: Cpu, onClick: () => props.onOpenTraining() },
+        { label: '训练', icon: Cpu, active: rightPanel === 'train', onClick: () => props.onOpenTraining() },
         { label: '模型', icon: Box, badge: models.length, active: rightPanel === 'models' || rightPanel === 'modelDetail',
           onClick: () => props.onRightPanel('models') },
       ],

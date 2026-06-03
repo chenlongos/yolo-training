@@ -4,7 +4,7 @@ import type { Project, Dataset, TrainedModel, Image, LabelClass } from '../types
 import Sidebar from '../components/Sidebar';
 import ProjectSidebar, { type RightPanel } from '../components/ProjectSidebar';
 import AnnotationTool from '../components/AnnotationTool';
-import TrainingModal from '../components/TrainingModal';
+import TrainingPage from './TrainingPage';
 import Modal from '../components/Modal';
 import UploadPanel from './UploadPanel';
 import DataPanel from './DataPanel';
@@ -90,7 +90,6 @@ export default function Workspace() {
   if (annotateOpen) {
     return <AnnotationTool datasetId={activeDataset} images={imgList} classes={classes} startIndex={annotateIdx} onClose={() => setAnnotateOpen(false)} />;
   }
-
   const projectName = projectList.find(p => p.id === activeProject)?.name || '';
   const activeModelObj = activeModels.find(m => m.id === activeModelId);
 
@@ -105,16 +104,21 @@ export default function Workspace() {
               projectName={projectName} datasets={activeDatasets} models={activeModels}
               activeDataset={activeDataset} rightPanel={rightPanel}
               onBack={() => setActiveProject('')}
-              onRightPanel={setRightPanel}
-              onSelectDataset={id => { setActiveDataset(id); setRightPanel('dataset'); }}
+              onRightPanel={(p) => { setRightPanel(p); setTrainOpen(false); }}
+              onSelectDataset={(id) => { setActiveDataset(id); setRightPanel('dataset'); setTrainOpen(false); }}
               onShowNewDataset={() => setShowNewDataset(true)}
               onOpenAnnotator={() => { if (activeDataset) openAnnotator(activeDataset); }}
-              onOpenTraining={() => setTrainOpen(true)}
+              onOpenTraining={() => { setTrainOpen(!trainOpen); setRightPanel(trainOpen ? null : 'train'); }}
             />
           )}
 
           <div className="flex-1 overflow-y-auto p-6 flex flex-col">
-            {nav === 'projects' && activeProject ? (
+            {trainOpen && (
+              <TrainingPage
+                datasets={activeDatasets.map(d => ({ id: d.id, name: d.name, imageCount: d.image_count }))}
+                onStart={handleTraining} onClose={() => setTrainOpen(false)} training={false} />
+            )}
+            {!trainOpen && nav === 'projects' && activeProject ? (
               <>
                 {rightPanel === 'upload' && <UploadPanel
                   sourceType={sourceType} ipUrl={ipUrl} camActive={camActive}
@@ -127,7 +131,7 @@ export default function Workspace() {
                 {rightPanel === 'dataset' && activeDataset && (
                   <ImageGrid dataset={activeDatasets.find(d => d.id === activeDataset)!} images={imgList} classes={classes}
                     page={imgPage} total={imgTotal} onPage={setImgPage} onSearch={() => {}}
-                    onAnnotate={id => openAnnotator(id)} onTrain={() => setTrainOpen(true)}
+                    onAnnotate={id => openAnnotator(id)} onTrain={() => { setTrainOpen(true); setRightPanel('train'); }}
                     onImageClick={idx => openAnnotator(activeDataset, idx)}
                     onDeleteImages={async (ids) => {
                       for (const id of ids) {
@@ -222,9 +226,6 @@ export default function Workspace() {
       {showNewDataset && <Modal title="新建数据集" onClose={() => setShowNewDataset(false)} onConfirm={createDataset}>
         <input value={newDatasetName} onChange={e => setNewDatasetName(e.target.value)} placeholder="数据集名称" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500" />
       </Modal>}
-      {trainOpen && <TrainingModal
-        datasets={activeDatasets.map(d => ({ id: d.id, name: d.name }))}
-        onStart={handleTraining} onClose={() => setTrainOpen(false)} />}
     </div>
   );
 }
