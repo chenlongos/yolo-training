@@ -59,14 +59,14 @@ export default function ImageGrid({ dataset, images, classes, page, total, onPag
       {/* 图片网格 */}
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 py-3 flex-1 overflow-y-auto">
         {filtered.map((img, i) => (
-          <div key={img.id} onClick={() => onImageClick(i)} className="cursor-pointer">
-            <ImageCard
-              filename={img.filename}
-              imageUrl={img.thumbnail_url || img.image_url || `/api/v1/images/${img.id}/thumbnail`}
-              status={imgStatus(img.status)}
-              hasAnnotation={img.status === 'annotated'}
-            />
-          </div>
+          <ImageCard
+            key={img.id}
+            filename={img.filename}
+            imageUrl={img.thumbnail_url || img.image_url || `/api/v1/images/${img.id}/thumbnail`}
+            status={imgStatus(img.status)}
+            hasAnnotation={img.status === 'annotated'}
+            onClick={() => onImageClick(i)}
+          />
         ))}
         {filtered.length === 0 && (
           <div className="col-span-full text-center py-16 text-gray-400 text-sm">
