@@ -14,8 +14,8 @@
 
 ```
 
-- 训练入口：`python -m src.tennis_train.train`
-- 推理入口：`python -m src.tennis_train.predict`
+- 训练入口：`python -m training_engine.train`
+- 推理入口：`python -m training_engine.predict`
 - 数据集配置：`configs/tennis.yaml`
 
 这个项目目前基于yolo26实现做了一层适配，可以选用其他模型：
@@ -47,17 +47,17 @@ pip install -e .
 
 GPU/MPS 训练（Apple Silicon Mac）：
 ```bash
-python -m src.tennis_train.train --model yolov8n.pt --data configs/tennis_ball.yaml --epochs 100 --device mps
+python -m training_engine.train --model yolov8n.pt --data configs/tennis_ball.yaml --epochs 100 --device mps
 ```
 
 GPU 训练（NVIDIA CUDA）：
 ```bash
-python -m src.tennis_train.train --model yolov8n.pt --data configs/tennis_ball.yaml --epochs 100 --device 0
+python -m training_engine.train --model yolov8n.pt --data configs/tennis_ball.yaml --epochs 100 --device 0
 ```
 
 CPU 训练：
 ```bash
-python -m src.tennis_train.train --model yolov8n.pt --data configs/tennis_ball.yaml --epochs 100 --device cpu
+python -m training_engine.train --model yolov8n.pt --data configs/tennis_ball.yaml --epochs 100 --device cpu
 ```
 
 常用参数：
@@ -75,7 +75,7 @@ python -m src.tennis_train.train --model yolov8n.pt --data configs/tennis_ball.y
 
 图片/视频推理：
 ```bash
-python -m src.tennis_train.predict \
+python -m training_engine.predict \
   --model runs/detect/runs/tennis/train/weights/best_int8.onnx \
   --source demo.jpg \
   --conf 0.25 \
@@ -115,10 +115,10 @@ tail -f runs/detect/runs/tennis/train2/*.log
 停止正在运行的训练：
 ```bash
 # 方法1：在另一个终端执行
-pkill -f "tennis_train.train"
+pkill -f "training_engine.train"
 
 # 方法2：强制终止
-pkill -9 -f "tennis_train.train"
+pkill -9 -f "training_engine.train"
 ```
 
 查看已保存的模型：

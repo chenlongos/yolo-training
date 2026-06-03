@@ -85,7 +85,7 @@ names: ['tennis ball']
 ### 4.1 训练命令
 
 ```powershell
-python -m tennis_train.train \
+python -m training_engine.train \
   --model yolov8n.pt \
   --data configs/tennis_ball.yaml \
   --epochs 100 \
@@ -113,7 +113,7 @@ python -m tennis_train.train \
 ### 5.1 FP32 ONNX 导出
 
 ```powershell
-python -m tennis_train.train --export \
+python -m training_engine.train --export \
   --weights runs/detect/runs/tennis/train2/weights/best.pt
 ```
 
@@ -122,7 +122,7 @@ python -m tennis_train.train --export \
 ### 5.2 INT8 静态量化
 
 ```powershell
-python -m tennis_train.quantize \
+python -m training_engine.quantize \
   --model runs/detect/runs/tennis/train2/weights/best.onnx \
   --calibration-data "dataset/valid/images" \
   --output runs/detect/runs/tennis/train2/weights/best_int8.onnx
@@ -281,7 +281,7 @@ tennis-train/
 │       ├── best.pt                   # PyTorch 权重
 │       ├── best.onnx                 # FP32 ONNX (11.7 MB)
 │       └── best_int8.onnx            # INT8 量化 ONNX (~3 MB)
-├── src/tennis_train/
+├── training_engine/
 │   ├── train.py                      # 训练脚本
 │   ├── quantize.py                   # ONNX INT8 量化脚本
 │   ├── adapter.py                    # 量化适配层

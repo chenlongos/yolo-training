@@ -1,4 +1,31 @@
+# Existing - Training engine
 ultralytics>=8.3.0
 PyYAML>=6.0
 onnxruntime>=1.19.0
 Pillow>=10.0.0
+
+# Web framework
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+python-multipart>=0.0.18
+
+# Auth
+python-jose[cryptography]>=3.3.0
+bcrypt>=4.0.0
+
+# Templates
+jinja2>=3.1.4
+
+# Task queue
+celery[redis]>=5.4.0
+redis>=5.2.0
+
+# File handling
+aiofiles>=24.1.0
+
+# Config
+pydantic-settings>=2.6.0
+pydantic[email]>=2.0.0
+
+# GPU monitoring (optional)
+pynvml>=11.5.0

@@ -1,4 +1,4 @@
-.venv\Scripts\python.exe -W ignore -m tennis_train.quantize `
+.venv\Scripts\python.exe -W ignore -m training_engine.quantize `
   --model runs\detect\runs\tennis\train2\weights\best.pt `
   --calibration-data "dataset\valid\images"
 

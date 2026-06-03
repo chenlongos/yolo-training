@@ -17,7 +17,7 @@ from pathlib import Path
 # 确保 src 包路径可找到（pip install -e . 后通常不需要）
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from tennis_train.adapter import ModelAdapter
+from training_engine.adapter import ModelAdapter
 
 
 def build_parser() -> argparse.ArgumentParser:

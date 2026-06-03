@@ -3,3 +3,23 @@ runs
 dataset
 yolo*
 /tpu_convert
+
+# Storage (runtime data)
+/storage
+
+# Environment
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# Alembic
+migrations/versions/*
+!migrations/versions/.gitkeep
+
+# Docker
+docker-compose.override.yml

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import cv2
 
-from src.tennis_train.adapter import ModelAdapter
+from training_engine.adapter import ModelAdapter
 
 
 def run_camera(
