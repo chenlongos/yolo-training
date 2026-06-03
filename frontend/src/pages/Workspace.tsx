@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { projects, datasets, images as imgApi, training as trainApi, models as modelApi } from '../api/endpoints';
 import type { Project, Dataset, TrainedModel, Image, LabelClass } from '../types';
 import Sidebar from '../components/Sidebar';
@@ -16,7 +17,10 @@ type NavItem = 'projects' | 'models' | 'marketplace';
 type SourceType = 'webcam' | 'file' | 'ipcam';
 
 export default function Workspace() {
-  const [nav, setNav] = useState<NavItem>('projects');
+  const nav = useNavigate();
+  const loc = useLocation();
+
+  const [navTab, setNavTab] = useState<NavItem>('projects');
   const [projectList, setProjectList] = useState<Project[]>([]);
   const [activeProject, setActiveProject] = useState('');
   const [activeDataset, setActiveDataset] = useState('');
@@ -28,6 +32,7 @@ export default function Workspace() {
   const [imgPage, setImgPage] = useState(1);
   const [imgTotal, setImgTotal] = useState(0);
   const [classes, setClasses] = useState<LabelClass[]>([]);
+  const [trainingJobs, setTrainingJobs] = useState<any[]>([]);
 
   // 上传
   const [sourceType, setSourceType] = useState<SourceType>('webcam');
@@ -52,7 +57,34 @@ export default function Workspace() {
 
   // 加载
   useEffect(() => { projects.list().then(d => setProjectList(d.items)); }, []);
-  useEffect(() => { if (!activeProject) return; datasets.list(activeProject).then(setDatasetList); modelApi.list(activeProject).then(d => setModelList(d.items)); }, [activeProject]);
+
+  // URL 同步：state → URL
+  useEffect(() => {
+    const parts: string[] = [];
+    if (navTab === 'projects' && activeProject) {
+      parts.push('projects', activeProject);
+      if (trainOpen) { parts.push('train'); }
+      else if (activeDataset) {
+        parts.push('datasets', activeDataset);
+        if (rightPanel === 'upload') parts.push('upload');
+      }
+    } else if (navTab === 'models') { parts.push('models'); }
+    else if (navTab === 'marketplace') { parts.push('marketplace'); }
+    const path = '/' + parts.join('/');
+    if (loc.pathname !== path) nav(path, { replace: true });
+  }, [navTab, activeProject, activeDataset, rightPanel, trainOpen]);
+  useEffect(() => { if (!activeProject) return; datasets.list(activeProject).then(setDatasetList); modelApi.list(activeProject).then(d => setModelList(d.items)); trainApi.listJobs(activeProject).then(d => setTrainingJobs(d.items || [])); }, [activeProject]);
+
+  // Poll training jobs when on models page
+  useEffect(() => {
+    if (!activeProject || navTab !== 'models') return;
+    const hasRunning = trainingJobs.some(j => j.status === 'running' || j.status === 'queued');
+    if (!hasRunning) return;
+    const timer = setInterval(() => {
+      trainApi.listJobs(activeProject).then(d => setTrainingJobs(d.items || []));
+    }, 3000);
+    return () => clearInterval(timer);
+  }, [activeProject, navTab, trainingJobs]);
   useEffect(() => { if (!activeDataset) return; setImgPage(1); imgApi.get(activeDataset).then(() => {}).catch(() => {}); datasets.images(activeDataset, 1).then(d => { setImgList(d.items); setImgTotal(d.total); }); datasets.classes(activeDataset).then(setClasses); }, [activeDataset]);
   useEffect(() => { if (!activeDataset || rightPanel !== 'dataset') return; datasets.images(activeDataset, imgPage).then(d => { setImgList(d.items); setImgTotal(d.total); }); }, [imgPage]);
 
@@ -76,11 +108,9 @@ export default function Workspace() {
   }
 
   async function handleTraining(config: { name: string; model: string; epochs: number; imgsz: number; batch: number; device: string; datasetId: string }) {
-    try {
-      const cfg = await trainApi.createConfig(activeProject, { ...config, base_model: config.model, workers: 4, optimizer: 'auto', lr0: 0.01, lrf: 0.01, momentum: 0.937, weight_decay: 0.0005, warmup_epochs: 3, augment: true, extra_args: {} });
-      await trainApi.startJob({ model_config_id: cfg.id, dataset_id: config.datasetId, name: config.name || 'train' });
-      alert('训练已启动'); setTrainOpen(false);
-    } catch (e: any) { alert('启动失败: ' + e.message); }
+    const cfg = await trainApi.createConfig(activeProject, { ...config, name: config.name || 'train', base_model: config.model, workers: 4, optimizer: 'auto', lr0: 0.01, lrf: 0.01, momentum: 0.937, weight_decay: 0.0005, warmup_epochs: 3, augment: true, extra_args: {} });
+    const job = await trainApi.startJob({ model_config_id: cfg.id, dataset_id: config.datasetId, name: config.name || 'train' });
+    return job;
   }
 
   function openAnnotator(datasetId: string, idx = 0) {
@@ -95,11 +125,11 @@ export default function Workspace() {
 
   return (
     <div className="h-full flex">
-      <Sidebar nav={nav} collapsed={!!activeProject} onNav={key => { setNav(key); setActiveProject(''); }} />
+      <Sidebar nav={navTab} collapsed={!!activeProject} onNav={key => { setNavTab(key); setActiveProject(''); }} />
 
       <div className="flex-1 flex flex-col bg-gray-50 overflow-auto">
         <div className="flex-1 flex overflow-hidden">
-          {activeProject && nav === 'projects' && (
+          {activeProject && navTab === 'projects' && (
             <ProjectSidebar
               projectName={projectName} datasets={activeDatasets} models={activeModels}
               activeDataset={activeDataset} rightPanel={rightPanel}
@@ -118,7 +148,7 @@ export default function Workspace() {
                 datasets={activeDatasets.map(d => ({ id: d.id, name: d.name, imageCount: d.image_count }))}
                 onStart={handleTraining} onClose={() => setTrainOpen(false)} training={false} />
             )}
-            {!trainOpen && nav === 'projects' && activeProject ? (
+            {!trainOpen && navTab === 'projects' && activeProject ? (
               <>
                 {rightPanel === 'upload' && <UploadPanel
                   sourceType={sourceType} ipUrl={ipUrl} camActive={camActive}
@@ -144,7 +174,7 @@ export default function Workspace() {
                 {rightPanel === 'modelDetail' && activeModelObj && <ModelDetail model={activeModelObj} />}
                 {!rightPanel && <div className="w-full flex-1 flex items-center justify-center text-gray-400 text-sm">请从左侧选择功能</div>}
               </>
-            ) : !activeProject && nav === 'projects' ? (
+            ) : !activeProject && navTab === 'projects' ? (
               <div className="w-full flex-1 p-6">
                 {projectList.length === 0 ? (
                   <div className="text-center py-24">
@@ -176,16 +206,16 @@ export default function Workspace() {
                   </div>
                 )}
               </div>
-            ) : nav === 'models' ? (
+            ) : navTab === 'models' ? (
               <div className="w-full flex-1 p-6">
                 {activeProject ? (
                   <>
                     <button onClick={() => setActiveProject('')} className="text-sm text-gray-500 hover:text-gray-700 mb-4 block">← 所有项目</button>
-                    <ModelPanel models={activeModels} onSelect={id => { setActiveModelId(id); setRightPanel('modelDetail'); }} />
+                    <ModelPanel models={activeModels} jobs={trainingJobs} onSelect={id => { setActiveModelId(id); setRightPanel('modelDetail'); }} />
                     {activeModelObj && rightPanel === 'modelDetail' && <div className="mt-4"><ModelDetail model={activeModelObj} /></div>}
                   </>
                 ) : (
-                  <ModelPanel models={modelList} onSelect={() => {}} />
+                  <ModelPanel models={modelList} jobs={[]} onSelect={() => {}} />
                 )}
               </div>
             ) : (

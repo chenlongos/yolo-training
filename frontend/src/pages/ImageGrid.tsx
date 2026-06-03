@@ -74,6 +74,8 @@ export default function ImageGrid({ dataset, images, classes, page, total, onPag
           </button>
           <button onClick={() => onAnnotate(dataset.id)} className="px-4 py-1.5 text-xs rounded-lg bg-violet-600 text-white hover:bg-violet-700 font-medium">标注</button>
           <button onClick={onTrain} className="px-4 py-1.5 text-xs rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 font-medium">训练</button>
+          <a href={`/api/v1/datasets/${dataset.id}/export/yolo`} onClick={e => e.stopPropagation()}
+            className="px-4 py-1.5 text-xs rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 font-medium no-underline">导出 YOLO</a>
         </div>
       </div>
 
