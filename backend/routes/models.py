@@ -11,6 +11,15 @@ from backend.services.storage_service import storage_service
 
 router = APIRouter(prefix="/api/v1/models", tags=["models"])
 
+# Model cache to avoid reloading on every inference request
+_model_cache: dict[str, "ModelAdapter"] = {}
+
+def _get_adapter(weights_path: str) -> "ModelAdapter":
+    if weights_path not in _model_cache:
+        from training_engine.adapter import ModelAdapter
+        _model_cache[weights_path] = ModelAdapter(weights_path)
+    return _model_cache[weights_path]
+
 def _own_model(mid: str, user: dict) -> dict:
     m = db["trained_models"].get(mid)
     if not m: raise HTTPException(404, detail="Model not found")
@@ -73,8 +82,7 @@ async def predict_image(
         shutil.copyfileobj(file.file, f)
 
     # Run inference — no disk save, return annotated image as base64
-    from training_engine.adapter import ModelAdapter
-    adapter = ModelAdapter(weights)
+    adapter = _get_adapter(weights)
 
     try:
         results = adapter.predict(source=str(img_path), conf=conf, save=False)
@@ -88,7 +96,8 @@ async def predict_image(
     # Generate annotated image as base64
     import base64, io
     from PIL import Image
-    annotated = result.plot()  # numpy array (RGB)
+    annotated = result.plot()  # BGR from ultralytics/OpenCV
+    annotated = annotated[..., ::-1]  # BGR -> RGB for PIL
     pil_img = Image.fromarray(annotated)
     buf = io.BytesIO()
     pil_img.save(buf, format="JPEG", quality=90)
@@ -116,6 +125,95 @@ async def predict_image(
         "count": len(detections),
         "image_base64": img_base64,
     }
+
+
+@router.post("/{model_id}/predict-video")
+async def predict_video(
+    model_id: str,
+    file: UploadFile = File(...),
+    conf: float = Query(0.25),
+    sample_count: int = Query(4),
+    frame_skip: int = Query(10),
+    user: dict = Depends(get_current_user),
+):
+    m = _own_model(model_id, user)
+    weights = m.get("weights_path")
+    if not weights or not Path(weights).exists():
+        raise HTTPException(400, detail="Model weights not available")
+
+    # Save uploaded video to temp
+    tmp_dir = Path(tempfile.mkdtemp())
+    video_path = tmp_dir / (file.filename or "upload.mp4")
+    with open(video_path, "wb") as f:
+        shutil.copyfileobj(file.file, f)
+
+    try:
+        import cv2
+        import base64, io
+        from PIL import Image
+        from training_engine.adapter import ModelAdapter
+
+        adapter = ModelAdapter(weights)
+        cap = cv2.VideoCapture(str(video_path))
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        fps = cap.get(cv2.CAP_PROP_FPS)
+
+        all_detections: list[dict] = []
+        samples: list[str] = []  # base64 annotated frames
+        frame_idx = 0
+
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                break
+
+            if frame_idx % frame_skip == 0:
+                # Save frame as temp image for model inference
+                frame_path = tmp_dir / f"frame_{frame_idx}.jpg"
+                cv2.imwrite(str(frame_path), frame)
+                results = adapter.predict(source=str(frame_path), conf=conf, save=False)
+                r = results[0] if len(results) > 0 else None
+
+                if r is not None and hasattr(r, 'boxes') and r.boxes:
+                    names = getattr(r, 'names', {})
+                    for box in r.boxes:
+                        cls_id = int(box.cls[0]) if hasattr(box.cls[0], 'item') else int(box.cls[0])
+                        all_detections.append({
+                            "class": names.get(cls_id, str(cls_id)),
+                            "class_id": cls_id,
+                            "confidence": round(float(box.conf[0]), 4),
+                            "frame": frame_idx,
+                        })
+
+                    # Save annotated frame as sample (up to sample_count)
+                    if len(samples) < sample_count:
+                        annotated = r.plot()
+                        pil_img = Image.fromarray(annotated)
+                        buf = io.BytesIO()
+                        pil_img.save(buf, format="JPEG", quality=85)
+                        samples.append(base64.b64encode(buf.getvalue()).decode())
+
+            frame_idx += 1
+
+        cap.release()
+
+        # Summary stats
+        class_counts: dict[str, int] = {}
+        for d in all_detections:
+            class_counts[d["class"]] = class_counts.get(d["class"], 0) + 1
+
+        return {
+            "total_frames": total_frames,
+            "processed_frames": frame_idx,
+            "fps": round(fps, 1) if fps else 0,
+            "total_detections": len(all_detections),
+            "class_summary": class_counts,
+            "samples": samples,
+            "detections": all_detections[:200],  # limit detail to first 200
+        }
+    finally:
+        try: shutil.rmtree(tmp_dir)
+        except Exception: pass
 
 
 @router.get("/compare/data")
