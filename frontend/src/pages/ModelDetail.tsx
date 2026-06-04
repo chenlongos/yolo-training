@@ -1,13 +1,14 @@
-import { Trash2 } from 'lucide-react';
+import { Trash2, Crosshair } from 'lucide-react';
 import type { TrainedModel } from '../types';
 import { models as modelApi } from '../api/endpoints';
 
 interface Props {
   model: TrainedModel;
   onDelete?: (id: string, name: string) => void;
+  onInference?: (id: string) => void;
 }
 
-export default function ModelDetail({ model: m, onDelete }: Props) {
+export default function ModelDetail({ model: m, onDelete, onInference }: Props) {
   return (
     <div className="w-full flex-1 bg-white rounded-xl border border-gray-200 shadow-sm p-5">
       <div className="flex items-center justify-between mb-4">
@@ -16,6 +17,12 @@ export default function ModelDetail({ model: m, onDelete }: Props) {
           <span className={`text-xs px-2 py-0.5 rounded-full ${m.status === 'completed' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>{m.status}</span>
         </div>
         <div className="flex items-center gap-2">
+          {m.weights_path && onInference && (
+            <button onClick={() => onInference(m.id)}
+              className="px-4 py-2 text-sm rounded-lg bg-violet-600 text-white hover:bg-violet-700 font-medium flex items-center gap-1">
+              <Crosshair size={14} /> 推理
+            </button>
+          )}
           {m.weights_path && (
             <a href={modelApi.downloadUrl(m.id, 'pt')}
               className="px-4 py-2 text-sm rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 font-medium">下载模型</a>

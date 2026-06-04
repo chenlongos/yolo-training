@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Cpu, Zap } from 'lucide-react';
+import { Cpu, X } from 'lucide-react';
 
 interface DatasetInfo { id: string; name: string; imageCount: number; }
 interface Props {
@@ -15,7 +15,7 @@ const MODELS = [
   { value: 'yolov8m.pt', label: 'YOLOv8 Medium', desc: '更高精度' },
 ];
 
-export default function TrainingPage({ datasets, onStart }: Props) {
+export default function TrainingPage({ datasets, onStart, onClose }: Props) {
   const [name, setName] = useState(`train_${new Date().toISOString().slice(0, 10)}`);
   const [model, setModel] = useState('yolov8n.pt');
   const [epochs, setEpochs] = useState(50);
@@ -76,12 +76,17 @@ export default function TrainingPage({ datasets, onStart }: Props) {
     return (
       <div className="flex-1 flex items-center justify-center">
         <div className="w-full max-w-md space-y-6">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-purple-100 rounded-lg"><Cpu className="w-5 h-5 text-purple-600" /></div>
-            <div>
-              <h1 className="text-xl font-bold text-gray-900">训练监控</h1>
-              <p className="text-xs text-gray-500">{name} · {model}</p>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-purple-100 rounded-lg"><Cpu className="w-5 h-5 text-purple-600" /></div>
+              <div>
+                <h1 className="text-xl font-bold text-gray-900">训练监控</h1>
+                <p className="text-xs text-gray-500">{name} · {model}</p>
+              </div>
             </div>
+            <button onClick={onClose} className="p-2 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 cursor-pointer" title="关闭">
+              <X size={18} />
+            </button>
           </div>
 
           {/* 状态 */}
@@ -126,9 +131,14 @@ export default function TrainingPage({ datasets, onStart }: Props) {
   return (
     <div className="flex-1 flex items-center justify-center">
       <div className="w-full max-w-lg space-y-6">
-        <div className="flex items-center gap-3">
-          <div className="p-2 bg-purple-100 rounded-lg"><Cpu className="w-5 h-5 text-purple-600" /></div>
-          <h1 className="text-xl font-bold text-gray-900">模型训练</h1>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-purple-100 rounded-lg"><Cpu className="w-5 h-5 text-purple-600" /></div>
+            <h1 className="text-xl font-bold text-gray-900">模型训练</h1>
+          </div>
+          <button onClick={onClose} className="p-2 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 cursor-pointer" title="关闭">
+            <X size={18} />
+          </button>
         </div>
 
         <section>

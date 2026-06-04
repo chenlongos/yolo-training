@@ -12,6 +12,7 @@ import DataPanel from './DataPanel';
 import ImageGrid from './ImageGrid';
 import ModelPanel from './ModelPanel';
 import ModelDetail from './ModelDetail';
+import InferencePanel from './InferencePanel';
 
 type NavItem = 'projects' | 'models' | 'marketplace';
 type SourceType = 'webcam' | 'file' | 'ipcam';
@@ -48,7 +49,6 @@ export default function Workspace() {
   const [newProjectName, setNewProjectName] = useState('');
   const [showNewDataset, setShowNewDataset] = useState(false);
   const [newDatasetName, setNewDatasetName] = useState('');
-  const [trainOpen, setTrainOpen] = useState(false);
   const [annotateOpen, setAnnotateOpen] = useState(false);
   const [annotateIdx, setAnnotateIdx] = useState(0);
 
@@ -66,7 +66,7 @@ export default function Workspace() {
     else if (parts[0] === 'projects' && parts[1]) {
       setNavTab('projects');
       setActiveProject(parts[1]);
-      if (parts[2] === 'train') { setTrainOpen(true); }
+      if (parts[2] === 'train') { setRightPanel('train'); }
       else if (parts[2] === 'datasets' && parts[3]) {
         setActiveDataset(parts[3]);
         setRightPanel('dataset');
@@ -79,7 +79,7 @@ export default function Workspace() {
     const parts: string[] = [];
     if (navTab === 'projects' && activeProject) {
       parts.push('projects', activeProject);
-      if (trainOpen) { parts.push('train'); }
+      if (rightPanel === 'train') { parts.push('train'); }
       else if (activeDataset) {
         parts.push('datasets', activeDataset);
         if (rightPanel === 'upload') parts.push('upload');
@@ -88,7 +88,7 @@ export default function Workspace() {
     else if (navTab === 'marketplace') { parts.push('marketplace'); }
     const path = '/' + parts.join('/');
     if (loc.pathname !== path) nav(path, { replace: true });
-  }, [navTab, activeProject, activeDataset, rightPanel, trainOpen]);
+  }, [navTab, activeProject, activeDataset, rightPanel]);
   useEffect(() => { if (!activeProject) return; setActiveDataset(''); setImgList([]); datasets.list(activeProject).then(setDatasetList).catch(() => {}); modelApi.list(activeProject).then(d => setModelList(d.items || [])).catch(() => {}); trainApi.listJobs(activeProject).then(d => setTrainingJobs(d.items || [])).catch(() => {}); }, [activeProject]);
 
   // Load training jobs for models tab without project
@@ -151,7 +151,6 @@ export default function Workspace() {
     const cfg = await trainApi.createConfig(activeProject, { ...config, name: config.name || 'train', base_model: config.model, workers: 4, optimizer: 'auto', lr0: 0.01, lrf: 0.01, momentum: 0.937, weight_decay: 0.0005, warmup_epochs: 3, augment: true, extra_args: {} });
     const job = await trainApi.startJob({ model_config_id: cfg.id, dataset_id: config.datasetId, name: config.name || 'train' });
     // 自动跳转到模型页面查看训练进度
-    setTrainOpen(false);
     setRightPanel('models');
     modelApi.list(activeProject).then(d => setModelList(d.items || [])).catch(() => {});
     trainApi.listJobs(activeProject).then(d => setTrainingJobs(d.items || [])).catch(() => {});
@@ -179,22 +178,22 @@ export default function Workspace() {
               projectName={projectName} datasets={activeDatasets} models={activeModels}
               activeDataset={activeDataset} rightPanel={rightPanel}
               onBack={() => setActiveProject('')}
-              onRightPanel={(p) => { setRightPanel(p); setTrainOpen(false); }}
-              onSelectDataset={(id) => { setActiveDataset(id); setRightPanel('dataset'); setTrainOpen(false); }}
+              onRightPanel={(p) => { setRightPanel(p); }}
+              onSelectDataset={(id) => { setActiveDataset(id); setRightPanel('dataset'); }}
               onShowNewDataset={() => setShowNewDataset(true)}
               onOpenAnnotator={() => { const dsId = activeDataset || activeDatasets[0]?.id; if (dsId) openAnnotator(dsId); }}
-              onOpenTraining={() => { setTrainOpen(!trainOpen); setRightPanel(trainOpen ? null : 'train'); }}
+              onOpenTraining={() => { setRightPanel(rightPanel === 'train' ? 'models' : 'train'); }}
             />
           )}
 
           <div className="flex-1 overflow-y-auto p-6 flex flex-col">
-            {trainOpen && (
-              <TrainingPage
-                datasets={activeDatasets.map(d => ({ id: d.id, name: d.name, imageCount: d.image_count }))}
-                onStart={handleTraining} onClose={() => setTrainOpen(false)} training={false} />
-            )}
-            {!trainOpen && navTab === 'projects' && activeProject ? (
+            {navTab === 'projects' && activeProject ? (
               <>
+                {rightPanel === 'train' && (
+                  <TrainingPage
+                    datasets={activeDatasets.map(d => ({ id: d.id, name: d.name, imageCount: d.image_count }))}
+                    onStart={handleTraining} onClose={() => setRightPanel('models')} training={false} />
+                )}
                 {rightPanel === 'upload' && <UploadPanel
                   sourceType={sourceType} ipUrl={ipUrl} camActive={camActive}
                   uploadFiles={uploadFiles} uploadProgress={uploadProgress} uploading={uploading} captureCount={captureCount}
@@ -206,7 +205,7 @@ export default function Workspace() {
                 {rightPanel === 'dataset' && activeDataset && (() => { const ds = activeDatasets.find(d => d.id === activeDataset); if (!ds) return <div className="w-full flex-1 flex items-center justify-center text-gray-400 text-sm">数据集未找到</div>; return (
                   <ImageGrid dataset={ds} images={imgList} classes={classes}
                     page={imgPage} total={imgTotal} onPage={setImgPage} onSearch={() => {}}
-                    onAnnotate={id => openAnnotator(id)} onTrain={() => { setTrainOpen(true); setRightPanel('train'); }}
+                    onAnnotate={id => openAnnotator(id)} onTrain={() => { setRightPanel('train'); }}
                     onImageClick={idx => openAnnotator(activeDataset, idx)}
                     onDeleteImages={async (ids) => {
                       for (const id of ids) {
@@ -216,7 +215,8 @@ export default function Workspace() {
                     }} />
                 ); })()}
                 {rightPanel === 'models' && <ModelPanel models={activeModels} jobs={trainingJobs} onSelect={id => { setActiveModelId(id); setRightPanel('modelDetail'); }} onDelete={handleDeleteModel} onCancelJob={handleCancelJob} />}
-                {rightPanel === 'modelDetail' && activeModelObj && <ModelDetail model={activeModelObj} onDelete={handleDeleteModel} onCancelJob={handleCancelJob} />}
+                {rightPanel === 'modelDetail' && activeModelObj && <ModelDetail model={activeModelObj} onDelete={handleDeleteModel} onCancelJob={handleCancelJob} onInference={(id) => { setActiveModelId(id); setRightPanel('inference'); }} />}
+                {rightPanel === 'inference' && <InferencePanel models={activeModels} activeModelId={activeModelId} />}
                 {!rightPanel && <div className="w-full flex-1 flex items-center justify-center text-gray-400 text-sm">请从左侧选择功能</div>}
               </>
             ) : !activeProject && navTab === 'projects' ? (
@@ -257,7 +257,7 @@ export default function Workspace() {
                   <>
                     <button onClick={() => setActiveProject('')} className="text-sm text-gray-500 hover:text-gray-700 mb-4 block">← 所有项目</button>
                     <ModelPanel models={activeModels} jobs={trainingJobs} onSelect={id => { setActiveModelId(id); setRightPanel('modelDetail'); }} onDelete={handleDeleteModel} onCancelJob={handleCancelJob} />
-                    {activeModelObj && rightPanel === 'modelDetail' && <div className="mt-4"><ModelDetail model={activeModelObj} onDelete={handleDeleteModel} onCancelJob={handleCancelJob} /></div>}
+                    {activeModelObj && rightPanel === 'modelDetail' && <div className="mt-4"><ModelDetail model={activeModelObj} onDelete={handleDeleteModel} onCancelJob={handleCancelJob} onInference={(id) => { setActiveModelId(id); setRightPanel('inference'); }} /></div>}
                   </>
                 ) : (
                   <ModelPanel models={modelList} jobs={trainingJobs} onSelect={() => {}} onDelete={handleDeleteModel} onCancelJob={handleCancelJob} />
