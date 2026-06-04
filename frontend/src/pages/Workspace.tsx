@@ -13,6 +13,7 @@ import ImageGrid from './ImageGrid';
 import ModelPanel from './ModelPanel';
 import ModelDetail from './ModelDetail';
 import InferencePanel from './InferencePanel';
+import DeployPanel from './DeployPanel';
 
 type NavItem = 'projects' | 'models' | 'marketplace';
 type SourceType = 'webcam' | 'file' | 'ipcam';
@@ -217,6 +218,7 @@ export default function Workspace() {
                 {rightPanel === 'models' && <ModelPanel models={activeModels} jobs={trainingJobs} onSelect={id => { setActiveModelId(id); setRightPanel('modelDetail'); }} onDelete={handleDeleteModel} onCancelJob={handleCancelJob} />}
                 {rightPanel === 'modelDetail' && activeModelObj && <ModelDetail model={activeModelObj} onDelete={handleDeleteModel} onCancelJob={handleCancelJob} onInference={(id) => { setActiveModelId(id); setRightPanel('inference'); }} />}
                 {rightPanel === 'inference' && <InferencePanel models={activeModels} activeModelId={activeModelId} />}
+                {rightPanel === 'deploy' && <DeployPanel models={activeModels} />}
                 {!rightPanel && <div className="w-full flex-1 flex items-center justify-center text-gray-400 text-sm">请从左侧选择功能</div>}
               </>
             ) : !activeProject && navTab === 'projects' ? (
