@@ -56,7 +56,23 @@ export default function Workspace() {
   const streamRef = useRef<MediaStream | null>(null);
 
   // 加载
-  useEffect(() => { projects.list().then(d => setProjectList(d.items)); }, []);
+  useEffect(() => { projects.list().then(d => setProjectList(d.items)).catch(() => {}); }, []);
+
+  // URL → state 解析
+  useEffect(() => {
+    const parts = loc.pathname.replace(/^\/+/, '').split('/').filter(Boolean);
+    if (parts[0] === 'models') { setNavTab('models'); }
+    else if (parts[0] === 'marketplace') { setNavTab('marketplace'); }
+    else if (parts[0] === 'projects' && parts[1]) {
+      setNavTab('projects');
+      setActiveProject(parts[1]);
+      if (parts[2] === 'train') { setTrainOpen(true); }
+      else if (parts[2] === 'datasets' && parts[3]) {
+        setActiveDataset(parts[3]);
+        setRightPanel('dataset');
+      }
+    }
+  }, []);
 
   // URL 同步：state → URL
   useEffect(() => {
@@ -73,23 +89,47 @@ export default function Workspace() {
     const path = '/' + parts.join('/');
     if (loc.pathname !== path) nav(path, { replace: true });
   }, [navTab, activeProject, activeDataset, rightPanel, trainOpen]);
-  useEffect(() => { if (!activeProject) return; datasets.list(activeProject).then(setDatasetList); modelApi.list(activeProject).then(d => setModelList(d.items)); trainApi.listJobs(activeProject).then(d => setTrainingJobs(d.items || [])); }, [activeProject]);
+  useEffect(() => { if (!activeProject) return; setActiveDataset(''); setImgList([]); datasets.list(activeProject).then(setDatasetList).catch(() => {}); modelApi.list(activeProject).then(d => setModelList(d.items || [])).catch(() => {}); trainApi.listJobs(activeProject).then(d => setTrainingJobs(d.items || [])).catch(() => {}); }, [activeProject]);
 
-  // Poll training jobs when on models page
+  // Load training jobs for models tab without project
   useEffect(() => {
-    if (!activeProject || navTab !== 'models') return;
+    if (activeProject || navTab !== 'models') return;
+    trainApi.listJobs().then(d => setTrainingJobs(d.items || [])).catch(() => {});
+  }, [activeProject, navTab]);
+
+  // Poll training jobs when viewing models (anywhere)
+  useEffect(() => {
+    const viewingModels = navTab === 'models' || rightPanel === 'models' || rightPanel === 'modelDetail';
+    if (!viewingModels) return;
     const hasRunning = trainingJobs.some(j => j.status === 'running' || j.status === 'queued');
     if (!hasRunning) return;
     const timer = setInterval(() => {
-      trainApi.listJobs(activeProject).then(d => setTrainingJobs(d.items || []));
+      trainApi.listJobs(activeProject || undefined).then(d => setTrainingJobs(d.items || [])).catch(() => {});
     }, 3000);
     return () => clearInterval(timer);
-  }, [activeProject, navTab, trainingJobs]);
+  }, [activeProject, navTab, rightPanel, trainingJobs]);
   useEffect(() => { if (!activeDataset) return; setImgPage(1); imgApi.get(activeDataset).then(() => {}).catch(() => {}); datasets.images(activeDataset, 1).then(d => { setImgList(d.items); setImgTotal(d.total); }); datasets.classes(activeDataset).then(setClasses); }, [activeDataset]);
   useEffect(() => { if (!activeDataset || rightPanel !== 'dataset') return; datasets.images(activeDataset, imgPage).then(d => { setImgList(d.items); setImgTotal(d.total); }); }, [imgPage]);
 
   const activeDatasets = datasetList.filter(d => d.project_id === activeProject);
   const activeModels = modelList.filter(m => m.project_id === activeProject);
+
+  async function handleDeleteModel(id: string, name: string) {
+    if (!window.confirm(`确认删除模型 "${name}"？此操作不可撤销。`)) return;
+    try {
+      await modelApi.delete(id);
+      if (activeModelId === id) { setActiveModelId(''); setRightPanel('models'); }
+      modelApi.list(activeProject).then(d => setModelList(d.items || [])).catch(() => {});
+    } catch { /* ignore */ }
+  }
+
+  async function handleCancelJob(id: string) {
+    if (!window.confirm('确认取消此训练任务？')) return;
+    try {
+      await trainApi.cancelJob(id);
+    } catch { /* job may already be deleted */ }
+    trainApi.listJobs(activeProject).then(d => setTrainingJobs(d.items || [])).catch(() => {});
+  }
 
   async function createProject() { await projects.create({ name: newProjectName }); setShowNewProject(false); setNewProjectName(''); projects.list().then(d => setProjectList(d.items)); }
   async function createDataset() { if (!activeProject) return; await datasets.create(activeProject, { name: newDatasetName }); setShowNewDataset(false); setNewDatasetName(''); datasets.list(activeProject).then(setDatasetList); }
@@ -110,6 +150,11 @@ export default function Workspace() {
   async function handleTraining(config: { name: string; model: string; epochs: number; imgsz: number; batch: number; device: string; datasetId: string }) {
     const cfg = await trainApi.createConfig(activeProject, { ...config, name: config.name || 'train', base_model: config.model, workers: 4, optimizer: 'auto', lr0: 0.01, lrf: 0.01, momentum: 0.937, weight_decay: 0.0005, warmup_epochs: 3, augment: true, extra_args: {} });
     const job = await trainApi.startJob({ model_config_id: cfg.id, dataset_id: config.datasetId, name: config.name || 'train' });
+    // 自动跳转到模型页面查看训练进度
+    setTrainOpen(false);
+    setRightPanel('models');
+    modelApi.list(activeProject).then(d => setModelList(d.items || [])).catch(() => {});
+    trainApi.listJobs(activeProject).then(d => setTrainingJobs(d.items || [])).catch(() => {});
     return job;
   }
 
@@ -125,7 +170,7 @@ export default function Workspace() {
 
   return (
     <div className="h-full flex">
-      <Sidebar nav={navTab} collapsed={!!activeProject} onNav={key => { setNavTab(key); setActiveProject(''); }} />
+      <Sidebar nav={navTab} collapsed={!!activeProject} onNav={key => { setNavTab(key); if (key !== navTab || activeProject) setActiveProject(''); }} />
 
       <div className="flex-1 flex flex-col bg-gray-50 overflow-auto">
         <div className="flex-1 flex overflow-hidden">
@@ -137,7 +182,7 @@ export default function Workspace() {
               onRightPanel={(p) => { setRightPanel(p); setTrainOpen(false); }}
               onSelectDataset={(id) => { setActiveDataset(id); setRightPanel('dataset'); setTrainOpen(false); }}
               onShowNewDataset={() => setShowNewDataset(true)}
-              onOpenAnnotator={() => { if (activeDataset) openAnnotator(activeDataset); }}
+              onOpenAnnotator={() => { const dsId = activeDataset || activeDatasets[0]?.id; if (dsId) openAnnotator(dsId); }}
               onOpenTraining={() => { setTrainOpen(!trainOpen); setRightPanel(trainOpen ? null : 'train'); }}
             />
           )}
@@ -158,8 +203,8 @@ export default function Workspace() {
                   onUpload={doUpload} onClearFiles={() => setUploadFiles([])}
                 />}
                 {rightPanel === 'data' && <DataPanel datasets={activeDatasets} onSelect={id => { setActiveDataset(id); setRightPanel('dataset'); }} onNewDataset={() => setShowNewDataset(true)} />}
-                {rightPanel === 'dataset' && activeDataset && (
-                  <ImageGrid dataset={activeDatasets.find(d => d.id === activeDataset)!} images={imgList} classes={classes}
+                {rightPanel === 'dataset' && activeDataset && (() => { const ds = activeDatasets.find(d => d.id === activeDataset); if (!ds) return <div className="w-full flex-1 flex items-center justify-center text-gray-400 text-sm">数据集未找到</div>; return (
+                  <ImageGrid dataset={ds} images={imgList} classes={classes}
                     page={imgPage} total={imgTotal} onPage={setImgPage} onSearch={() => {}}
                     onAnnotate={id => openAnnotator(id)} onTrain={() => { setTrainOpen(true); setRightPanel('train'); }}
                     onImageClick={idx => openAnnotator(activeDataset, idx)}
@@ -169,9 +214,9 @@ export default function Workspace() {
                       }
                       if (activeDataset) datasets.images(activeDataset, imgPage).then(d => { setImgList(d.items); setImgTotal(d.total); });
                     }} />
-                )}
-                {rightPanel === 'models' && <ModelPanel models={activeModels} onSelect={id => { setActiveModelId(id); setRightPanel('modelDetail'); }} />}
-                {rightPanel === 'modelDetail' && activeModelObj && <ModelDetail model={activeModelObj} />}
+                ); })()}
+                {rightPanel === 'models' && <ModelPanel models={activeModels} jobs={trainingJobs} onSelect={id => { setActiveModelId(id); setRightPanel('modelDetail'); }} onDelete={handleDeleteModel} onCancelJob={handleCancelJob} />}
+                {rightPanel === 'modelDetail' && activeModelObj && <ModelDetail model={activeModelObj} onDelete={handleDeleteModel} onCancelJob={handleCancelJob} />}
                 {!rightPanel && <div className="w-full flex-1 flex items-center justify-center text-gray-400 text-sm">请从左侧选择功能</div>}
               </>
             ) : !activeProject && navTab === 'projects' ? (
@@ -211,11 +256,11 @@ export default function Workspace() {
                 {activeProject ? (
                   <>
                     <button onClick={() => setActiveProject('')} className="text-sm text-gray-500 hover:text-gray-700 mb-4 block">← 所有项目</button>
-                    <ModelPanel models={activeModels} jobs={trainingJobs} onSelect={id => { setActiveModelId(id); setRightPanel('modelDetail'); }} />
-                    {activeModelObj && rightPanel === 'modelDetail' && <div className="mt-4"><ModelDetail model={activeModelObj} /></div>}
+                    <ModelPanel models={activeModels} jobs={trainingJobs} onSelect={id => { setActiveModelId(id); setRightPanel('modelDetail'); }} onDelete={handleDeleteModel} onCancelJob={handleCancelJob} />
+                    {activeModelObj && rightPanel === 'modelDetail' && <div className="mt-4"><ModelDetail model={activeModelObj} onDelete={handleDeleteModel} onCancelJob={handleCancelJob} /></div>}
                   </>
                 ) : (
-                  <ModelPanel models={modelList} jobs={[]} onSelect={() => {}} />
+                  <ModelPanel models={modelList} jobs={trainingJobs} onSelect={() => {}} onDelete={handleDeleteModel} onCancelJob={handleCancelJob} />
                 )}
               </div>
             ) : (

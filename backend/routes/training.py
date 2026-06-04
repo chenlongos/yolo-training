@@ -38,9 +38,13 @@ def start_training(data: TrainingJobCreate, user: dict = Depends(get_current_use
     return create_training_job(user["id"], data.model_config_id, data.dataset_id, data.name, cfg["project_id"])
 
 @router.get("/training/jobs")
-def list_jobs(project_id: str = Query(...), status_filter: str = Query("", alias="status"), user: dict = Depends(get_current_user)):
-    _own_project(project_id, user)
-    models_in_project = [m["id"] for m in db["trained_models"].filter(lambda m: m["project_id"] == project_id)]
+def list_jobs(project_id: str = Query(""), status_filter: str = Query("", alias="status"), user: dict = Depends(get_current_user)):
+    if project_id:
+        _own_project(project_id, user)
+        models_in_project = [m["id"] for m in db["trained_models"].filter(lambda m: m["project_id"] == project_id)]
+    else:
+        user_projects = [p["id"] for p in db["projects"].filter(lambda p: str(p.get("user_id")) == str(user.get("id")))]
+        models_in_project = [m["id"] for m in db["trained_models"].all() if m["project_id"] in user_projects]
     jobs = db["training_jobs"].filter(lambda j: j["model_id"] in models_in_project)
     if status_filter: jobs = [j for j in jobs if j.get("status") == status_filter]
     return {"items": sorted(jobs, key=lambda j: j.get("created_at", ""), reverse=True), "total": len(jobs)}

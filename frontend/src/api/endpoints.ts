@@ -58,8 +58,8 @@ export const training = {
   startJob: (data: { model_config_id: string; dataset_id: string; name: string }) =>
     api.post('/training/jobs', data) as Promise<TrainingJob>,
   getJob: (id: string) => api.get(`/training/jobs/${id}`) as Promise<TrainingJob>,
-  listJobs: (projectId: string) =>
-    api.get(`/training/jobs?project_id=${projectId}`) as Promise<{ items: TrainingJob[]; total: number }>,
+  listJobs: (projectId?: string) =>
+    api.get(`/training/jobs${projectId ? `?project_id=${projectId}` : ''}`) as Promise<{ items: TrainingJob[]; total: number }>,
   cancelJob: (id: string) => api.post(`/training/jobs/${id}/cancel`),
 };
 

@@ -41,7 +41,7 @@ export default function Sidebar({ nav, collapsed, onNav }: Props) {
       {/* 导航 */}
       <nav className={`flex-1 py-2 space-y-0.5 ${expanded ? 'px-3' : 'px-1'}`}>
         {ITEMS.map(item => (
-          <button key={item.key} onClick={() => { onNav(item.key); setPinned(false); }}
+          <button key={item.key} onClick={(e) => { e.stopPropagation(); onNav(item.key); setPinned(false); }}
             className={`w-full flex items-center gap-3 rounded-md cursor-pointer text-sm transition-colors ${expanded ? 'px-3 py-2.5' : 'px-0 py-3 justify-center'} ${nav === item.key ? 'bg-[#2d1f4e] text-white' : 'hover:bg-gray-800 text-gray-400'}`}
             title={!expanded ? item.label : undefined}>
             <div className={`w-5 h-5 rounded flex items-center justify-center text-xs font-bold shrink-0 ${nav === item.key ? 'bg-violet-500/30 text-violet-300' : 'bg-gray-700 text-gray-400'}`}>

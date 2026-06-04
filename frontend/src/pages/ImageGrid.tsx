@@ -30,9 +30,13 @@ export default function ImageGrid({ dataset, images, classes, page, total, onPag
   const [filterText, setFilterText] = useState('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
+  if (!dataset) {
+    return <div className="w-full flex-1 flex items-center justify-center text-gray-400 text-sm">数据集未找到</div>;
+  }
+
   const filtered = filterText
-    ? images.filter(i => i.filename.toLowerCase().includes(filterText.toLowerCase()))
-    : images;
+    ? (images || []).filter(i => i.filename.toLowerCase().includes(filterText.toLowerCase()))
+    : (images || []);
 
   function toggleSelect(id: string) {
     setSelected(prev => {

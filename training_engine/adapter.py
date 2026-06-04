@@ -42,17 +42,15 @@ class ModelAdapter:
         project: str,
         name: str,
         workers: int,
+        callbacks: dict | None = None,
     ) -> Any:
-        return self.model.train(
-            data=data,
-            epochs=epochs,
-            imgsz=imgsz,
-            batch=batch,
-            device=device,
-            project=project,
-            name=name,
-            workers=workers,
+        kwargs: dict[str, Any] = dict(
+            data=data, epochs=epochs, imgsz=imgsz, batch=batch,
+            device=device, project=project, name=name, workers=workers,
         )
+        if callbacks:
+            kwargs["callbacks"] = callbacks
+        return self.model.train(**kwargs)
 
     def predict(
         self,

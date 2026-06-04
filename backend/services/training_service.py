@@ -1,6 +1,8 @@
 """Training service — file-based."""
+import threading
 from backend.store import db
-from backend.tasks.training_task import run_training
+from backend.tasks.training_task import run_training, run_training_sync
+
 
 def create_training_job(user_id, config_id, dataset_id, name, project_id) -> dict:
     cfg = db["model_configs"].get(config_id)
@@ -10,10 +12,14 @@ def create_training_job(user_id, config_id, dataset_id, name, project_id) -> dic
         "status": "queued", "progress": 0, "current_epoch": 0,
         "total_epochs": cfg.get("epochs", 100) if cfg else 100,
     })
-    # Try dispatching Celery task (non-blocking, best-effort)
+
+    # Try dispatching Celery task
     try:
         task = run_training.delay(job["id"])
         db["training_jobs"].update(job["id"], {"celery_task_id": task.id})
     except Exception:
-        pass  # Celery unavailable — training can be triggered manually
+        # Celery unavailable — run in background thread
+        t = threading.Thread(target=run_training_sync, args=(job["id"],), daemon=True)
+        t.start()
+
     return job
