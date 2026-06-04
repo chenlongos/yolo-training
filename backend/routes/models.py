@@ -68,13 +68,41 @@ def download_model(model_id: str, format: str, user: dict = Depends(get_current_
     if not p.exists(): raise HTTPException(404, detail="File not found")
     return FileResponse(p, filename=p.name)
 
+def _create_format_model(parent: dict, format_key: str, format_label: str, file_path: str) -> dict:
+    """Create a child model entry for an exported format so it appears in the model list."""
+    # Check if a model for this format already exists
+    existing = db["trained_models"].filter(
+        lambda m: m.get("parent_model_id") == parent["id"] and m.get("format_type") == format_key
+    )
+    if existing:
+        m = existing[0]
+        db["trained_models"].update(m["id"], {format_key + "_path": file_path, "weights_path": file_path})
+        return db["trained_models"].get(m["id"])
+
+    child = db["trained_models"].create({
+        "project_id": parent["project_id"],
+        "name": f"{parent['name']} ({format_label})",
+        "status": "completed",
+        "weights_path": file_path,
+        "onnx_path": file_path if "onnx" in format_key else None,
+        "parent_model_id": parent["id"],
+        "format_type": format_key,
+        "metrics": parent.get("metrics"),
+        "config_id": parent.get("config_id"),
+        "dataset_id": parent.get("dataset_id"),
+    })
+    return child
+
+
 @router.post("/{model_id}/export")
 def export_model(model_id: str, format: str = "onnx", user: dict = Depends(get_current_user)):
     m = _own_model(model_id, user)
     if format == "onnx":
         path = export_model_to_onnx(model_id)
-        if path: return {"format": "onnx", "path": path, "download_url": f"/api/v1/models/{model_id}/download/onnx"}
-        raise HTTPException(500, detail="ONNX export failed")
+        if not path: raise HTTPException(500, detail="ONNX export failed")
+        # Also create a child model for the ONNX format
+        child = _create_format_model(m, "onnx", "ONNX", path)
+        return {"format": "onnx", "path": path, "download_url": f"/api/v1/models/{child['id']}/download/onnx", "model_id": child["id"]}
     if format == "fp16_onnx":
         try:
             from training_engine.adapter import ModelAdapter
@@ -82,15 +110,14 @@ def export_model(model_id: str, format: str = "onnx", user: dict = Depends(get_c
             if not weights: raise HTTPException(400, detail="No weights available")
             adapter = ModelAdapter(weights)
             path = adapter.export(format_name="onnx", half=True)
-            if path:
-                fp16_path = str(Path(path).parent / "best_fp16.onnx")
-                db["trained_models"].update(model_id, {"fp16_onnx_path": fp16_path})
-                return {"format": "fp16_onnx", "path": fp16_path, "download_url": f"/api/v1/models/{model_id}/download/fp16_onnx"}
+            if not path: raise HTTPException(500, detail="FP16 export failed")
+            fp16_path = str(Path(path).parent / "best_fp16.onnx")
+            db["trained_models"].update(model_id, {"fp16_onnx_path": fp16_path})
+            child = _create_format_model(m, "fp16_onnx", "FP16", fp16_path)
+            return {"format": "fp16_onnx", "path": fp16_path, "download_url": f"/api/v1/models/{child['id']}/download/fp16_onnx", "model_id": child["id"]}
         except Exception as e:
             raise HTTPException(500, detail=f"FP16 export failed: {e}")
-        raise HTTPException(500, detail="FP16 export failed")
     if format == "int8_onnx":
-        # Ensure ONNX exists first
         onnx_path = m.get("onnx_path")
         if not onnx_path or not Path(onnx_path).exists():
             onnx_path = export_model_to_onnx(model_id)
@@ -101,14 +128,14 @@ def export_model(model_id: str, format: str = "onnx", user: dict = Depends(get_c
             weights = m.get("weights_path")
             if not weights: raise HTTPException(400, detail="No weights available")
             adapter = ModelAdapter(weights)
-            method = "dynamic"  # default
-            quant_path = adapter.export_quantized(int8=True, calibration_method=method)
-            if quant_path:
-                db["trained_models"].update(model_id, {"int8_onnx_path": str(quant_path)})
-                return {"format": "int8_onnx", "path": quant_path, "download_url": f"/api/v1/models/{model_id}/download/int8_onnx"}
+            quant_path = adapter.export_quantized(int8=True)
+            if not quant_path: raise HTTPException(500, detail="INT8 quantization failed")
+            quant_path_str = str(quant_path)
+            db["trained_models"].update(model_id, {"int8_onnx_path": quant_path_str})
+            child = _create_format_model(m, "int8_onnx", "INT8", quant_path_str)
+            return {"format": "int8_onnx", "path": quant_path_str, "download_url": f"/api/v1/models/{child['id']}/download/int8_onnx", "model_id": child["id"]}
         except Exception as e:
             raise HTTPException(500, detail=f"INT8 quantization failed: {e}")
-        raise HTTPException(500, detail="INT8 quantization failed")
     raise HTTPException(400, detail=f"Unsupported format: {format}")
 
 @router.post("/{model_id}/predict")

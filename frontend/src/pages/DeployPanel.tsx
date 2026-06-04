@@ -5,6 +5,7 @@ import type { TrainedModel } from '../types';
 
 interface Props {
   models: TrainedModel[];
+  onRefresh?: () => void;
 }
 
 const FORMATS = [
@@ -13,7 +14,7 @@ const FORMATS = [
   { value: 'int8_onnx', label: 'ONNX (INT8)', desc: '8-bit 量化，最小体积，最快速度', key: 'int8_onnx_path' as const, requires: 'onnx_path' as const },
 ];
 
-export default function DeployPanel({ models }: Props) {
+export default function DeployPanel({ models, onRefresh }: Props) {
   const [selectedModel, setSelectedModel] = useState('');
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState('');
@@ -41,6 +42,7 @@ export default function DeployPanel({ models }: Props) {
       const resp = await fetch(`/api/v1/models/${selectedModel}`);
       const updated = await resp.json();
       setModelDetail(updated);
+      onRefresh?.();
     } catch (e: any) {
       setError(e.message || 'Export failed');
     } finally {
