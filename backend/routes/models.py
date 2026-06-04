@@ -72,17 +72,12 @@ async def predict_image(
     with open(img_path, "wb") as f:
         shutil.copyfileobj(file.file, f)
 
-    # Run inference — use unique run name to avoid predict2/predict3 conflicts
+    # Run inference — no disk save, return annotated image as base64
     from training_engine.adapter import ModelAdapter
-    import uuid as _uuid
     adapter = ModelAdapter(weights)
-    out_dir = storage_service.models_dir / model_id / "predictions"
-    out_dir.mkdir(parents=True, exist_ok=True)
-    run_name = f"pred_{_uuid.uuid4().hex[:8]}"
 
     try:
-        results = adapter.predict(source=str(img_path), conf=conf, save=True,
-                                  project=str(out_dir), name=run_name)
+        results = adapter.predict(source=str(img_path), conf=conf, save=False)
     except Exception as e:
         raise HTTPException(500, detail=f"Prediction failed: {e}")
 
@@ -90,14 +85,14 @@ async def predict_image(
     if result is None:
         raise HTTPException(500, detail="No prediction result")
 
-    # Find the saved annotated image in the unique run directory
-    pred_dir = out_dir / run_name
-    saved_imgs = list(pred_dir.glob("*")) if pred_dir.exists() else []
-    result_filename = None
-    for p in saved_imgs:
-        if p.suffix.lower() in (".jpg", ".jpeg", ".png"):
-            result_filename = p.name
-            break
+    # Generate annotated image as base64
+    import base64, io
+    from PIL import Image
+    annotated = result.plot()  # numpy array (RGB)
+    pil_img = Image.fromarray(annotated)
+    buf = io.BytesIO()
+    pil_img.save(buf, format="JPEG", quality=90)
+    img_base64 = base64.b64encode(buf.getvalue()).decode()
 
     # Build detection data
     detections = []
@@ -119,17 +114,8 @@ async def predict_image(
     return {
         "detections": detections,
         "count": len(detections),
-        "result_url": f"/api/v1/models/{model_id}/predict-image/{run_name}/{result_filename}" if result_filename else None,
+        "image_base64": img_base64,
     }
-
-
-@router.get("/{model_id}/predict-image/{run_name}/{filename}")
-def get_predict_image(model_id: str, run_name: str, filename: str, user: dict = Depends(get_current_user)):
-    _own_model(model_id, user)
-    img_path = storage_service.models_dir / model_id / "predictions" / run_name / filename
-    if not img_path.exists():
-        raise HTTPException(404, detail="Result image not found")
-    return FileResponse(img_path)
 
 
 @router.get("/compare/data")

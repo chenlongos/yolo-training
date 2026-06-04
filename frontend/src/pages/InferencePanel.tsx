@@ -19,7 +19,7 @@ export default function InferencePanel({ models, activeModelId }: Props) {
   const [image, setImage] = useState<{ file: File; url: string } | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [result, setResult] = useState<{ detections: Detection[]; count: number; result_url: string | null } | null>(null);
+  const [result, setResult] = useState<{ detections: Detection[]; count: number; image_base64: string } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const completedModels = models.filter(m => m.status === 'completed' && m.weights_path);
@@ -108,10 +108,10 @@ export default function InferencePanel({ models, activeModelId }: Props) {
       {/* Results */}
       {result && (
         <div className="space-y-4">
-          {result.result_url && (
+          {result.image_base64 && (
             <div>
               <label className={lbl}>推理结果</label>
-              <img src={result.result_url} alt="result" className="w-full rounded-lg border" />
+              <img src={`data:image/jpeg;base64,${result.image_base64}`} alt="result" className="w-full rounded-lg border" />
             </div>
           )}
           <div className="flex items-center gap-2 text-sm">
