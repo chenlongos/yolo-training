@@ -47,9 +47,12 @@ export default function InferencePanel({ models, activeModelId }: Props) {
   const [camActive, setCamActive] = useState(false);
   const [liveActive, setLiveActive] = useState(false);
   const [liveResult, setLiveResult] = useState<ImageResult | null>(null);
+  const [liveFps, setLiveFps] = useState(0);
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const liveTimer = useRef<number>(0);
+  const wsRef = useRef<WebSocket | null>(null);
+  const fpsRef = useRef<number[]>([]);
 
   const completedModels = models.filter(m => m.status === 'completed' && m.weights_path);
 
@@ -65,33 +68,52 @@ export default function InferencePanel({ models, activeModelId }: Props) {
 
   function stopLiveLoop() {
     if (liveTimer.current) { clearTimeout(liveTimer.current); liveTimer.current = 0; }
+    if (wsRef.current) { wsRef.current.close(); wsRef.current = null; }
     setLiveActive(false);
+    fpsRef.current = [];
   }
 
-  async function startLiveLoop() {
+  function startLiveLoop() {
     if (!selectedModel || !camActive) return;
-    setLiveActive(true);
-    setLiveResult(null);
-    setError('');
 
-    async function tick() {
-      const inferenceFile = captureFrame();
-      if (!inferenceFile) { stopLiveLoop(); return; }
-      try {
-        const fd = new FormData();
-        fd.append('file', inferenceFile);
-        const resp = await fetch(`/api/v1/models/${selectedModel}/predict?conf=0.25`, {
-          method: 'POST',
-          body: fd,
-        });
-        if (resp.ok) {
-          const data = await resp.json();
-          setLiveResult(data);
-        }
-      } catch { /* ignore network errors during live loop */ }
-      liveTimer.current = window.setTimeout(tick, 300);
-    }
-    tick();
+    const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const ws = new WebSocket(`${protocol}//${location.host}/ws/inference/${selectedModel}?conf=0.25`);
+    ws.binaryType = 'arraybuffer';
+    wsRef.current = ws;
+
+    ws.onopen = () => {
+      setLiveActive(true);
+      setLiveResult(null);
+      setError('');
+      fpsRef.current = [];
+      // Start frame sending loop
+      function sendFrame() {
+        if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+        const jpegBytes = captureFrameJPEG();
+        if (!jpegBytes) { stopLiveLoop(); return; }
+        wsRef.current.send(jpegBytes);
+        liveTimer.current = window.setTimeout(sendFrame, 80);
+      }
+      sendFrame();
+    };
+
+    ws.onmessage = (e) => {
+      const buf = new Uint8Array(e.data as ArrayBuffer);
+      const headerLen = new DataView(buf.buffer).getUint32(0);
+      const meta = JSON.parse(new TextDecoder().decode(buf.slice(4, 4 + headerLen)));
+      const jpegBytes = buf.slice(4 + headerLen);
+      if (jpegBytes.length > 0) {
+        const b64 = btoa(String.fromCharCode(...jpegBytes));
+        setLiveResult({ detections: meta.detections || [], count: meta.count || 0, image_base64: b64 });
+      }
+      // FPS tracking
+      const now = Date.now();
+      fpsRef.current = [...fpsRef.current.filter(t => now - t < 2000), now];
+      setLiveFps(fpsRef.current.length / 2);
+    };
+
+    ws.onerror = () => { setError('WebSocket 连接失败'); stopLiveLoop(); };
+    ws.onclose = () => { if (liveActive) setLiveActive(false); };
   }
 
   function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
@@ -140,22 +162,20 @@ export default function InferencePanel({ models, activeModelId }: Props) {
     setCamActive(false);
   }
 
-  function captureFrame(): File | null {
+  function captureFrameJPEG(): Uint8Array | null {
     const v = videoRef.current;
     if (!v) return null;
     const c = document.createElement('canvas');
     c.width = v.videoWidth;
     c.height = v.videoHeight;
     c.getContext('2d')!.drawImage(v, 0, 0);
-    const dataUrl = c.toDataURL('image/jpeg', 0.9);
-    // Convert data URL to File
-    const arr = dataUrl.split(',');
-    const mime = arr[0].match(/:(.*?);/)![1];
-    const bstr = atob(arr[1]);
+    // Get JPEG bytes directly (avoid File/FormData overhead)
+    const dataUrl = c.toDataURL('image/jpeg', 0.7);
+    const bstr = atob(dataUrl.split(',')[1]);
     const n = bstr.length;
     const u8arr = new Uint8Array(n);
     for (let i = 0; i < n; i++) u8arr[i] = bstr.charCodeAt(i);
-    return new File([u8arr], 'capture.jpg', { type: mime });
+    return u8arr;
   }
 
   async function runInference() {
@@ -247,11 +267,18 @@ export default function InferencePanel({ models, activeModelId }: Props) {
               </button>
             )}
             {/* Detection overlay badge */}
-            {liveActive && liveResult && (
-              <div className="absolute top-2 left-2 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/60 text-white text-xs">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                <Crosshair size={12} />
-                <span className="font-medium">{liveResult.count} 个检测</span>
+            {liveActive && (
+              <div className="absolute top-2 left-2 flex items-center gap-2">
+                <span className="px-2 py-0.5 rounded-full bg-black/60 text-white text-xs flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  {liveFps > 0 ? `${liveFps.toFixed(0)} FPS` : '...'}
+                </span>
+                {liveResult && (
+                  <span className="px-2 py-0.5 rounded-full bg-black/60 text-white text-xs flex items-center gap-1">
+                    <Crosshair size={11} />
+                    {liveResult.count} 检测
+                  </span>
+                )}
               </div>
             )}
           </div>
