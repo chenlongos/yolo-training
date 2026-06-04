@@ -79,14 +79,20 @@ export default function ModelPanel({ models: list, jobs = [], onSelect, onDelete
                 ))}
               </div>
             )}
-            {m.weights_path && !m.parent_model_id && (
-              <a href={modelApi.downloadUrl(m.id, 'pt')} onClick={e => e.stopPropagation()}
-                className="inline-block mt-3 px-3 py-1 text-xs rounded bg-emerald-600 text-white hover:bg-emerald-700 font-medium">下载 PT</a>
-            )}
-            {m.weights_path && m.parent_model_id && (
-              <a href={modelApi.downloadUrl(m.id, m.format_type || 'onnx')} onClick={e => e.stopPropagation()}
-                className="inline-block mt-3 px-3 py-1 text-xs rounded bg-violet-600 text-white hover:bg-violet-700 font-medium">下载 {m.format_type?.replace('_', ' ').toUpperCase()}</a>
-            )}
+            <div className="flex items-center gap-2 mt-3">
+              {m.weights_path && !m.parent_model_id && (
+                <>
+                  <a href={modelApi.downloadUrl(m.id, 'pt')} onClick={e => e.stopPropagation()}
+                    className="px-3 py-1 text-xs rounded bg-emerald-600 text-white hover:bg-emerald-700 font-medium">下载 PT</a>
+                  <button onClick={(e) => { e.stopPropagation(); onSelect(m.id); }}
+                    className="px-3 py-1 text-xs rounded bg-violet-600 text-white hover:bg-violet-700 font-medium cursor-pointer">转换</button>
+                </>
+              )}
+              {m.weights_path && m.parent_model_id && (
+                <a href={modelApi.downloadUrl(m.id, m.format_type || 'onnx')} onClick={e => e.stopPropagation()}
+                  className="px-3 py-1 text-xs rounded bg-violet-600 text-white hover:bg-violet-700 font-medium">下载 {m.format_type?.replace('_', ' ').toUpperCase()}</a>
+              )}
+            </div>
           </div>
         ))}
       </div>

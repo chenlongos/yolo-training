@@ -17,7 +17,7 @@ const CONVERSIONS = [
 ];
 
 export default function ModelDetail({ model: m, onDelete, onInference, onRefresh }: Props) {
-  const [showConvert, setShowConvert] = useState(false);
+  const [showConvert, setShowConvert] = useState(true);
   const [converting, setConverting] = useState<string | null>(null);
   const [convertError, setConvertError] = useState('');
   const [converted, setConverted] = useState<Set<string>>(new Set());
