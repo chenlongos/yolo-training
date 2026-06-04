@@ -288,6 +288,16 @@ async def predict_video(
         except Exception: pass
 
 
+@router.get("/{model_id}/deploy")
+def get_deploy_files(model_id: str, user: dict = Depends(get_current_user)):
+    _own_model(model_id, user)
+    from backend.services.deploy_service import generate_deployment
+    try:
+        return generate_deployment(model_id)
+    except ValueError as e:
+        raise HTTPException(400, detail=str(e))
+
+
 @router.get("/compare/data")
 def compare_models(ids: str = Query(...), user: dict = Depends(get_current_user)):
     model_ids = [m.strip() for m in ids.split(",") if m.strip()]

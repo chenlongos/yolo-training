@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Rocket, Download, CheckCircle2, Box } from 'lucide-react';
+import { useState } from 'react';
+import { Rocket, Download, CheckCircle2, Box, Container, Loader2, Copy, Check } from 'lucide-react';
 import { models as modelApi } from '../api/endpoints';
 import type { TrainedModel } from '../types';
 
@@ -25,11 +25,36 @@ function getFormats(m: TrainedModel): string[] {
 
 export default function DeployPanel({ models }: Props) {
   const [selectedModel, setSelectedModel] = useState('');
+  const [deployInfo, setDeployInfo] = useState<any>(null);
+  const [deployLoading, setDeployLoading] = useState(false);
+  const [deployError, setDeployError] = useState('');
+  const [copiedFile, setCopiedFile] = useState('');
 
   const allModels = models.filter(m => m.status === 'completed');
   const model = allModels.find(m => m.id === selectedModel);
 
   const formats = model ? getFormats(model) : [];
+
+  async function generateDeploy() {
+    if (!selectedModel) return;
+    setDeployLoading(true);
+    setDeployError('');
+    try {
+      const resp = await fetch(`/api/v1/models/${selectedModel}/deploy`);
+      if (!resp.ok) throw new Error((await resp.json().catch(() => ({}))).detail || 'Failed');
+      setDeployInfo(await resp.json());
+    } catch (e: any) {
+      setDeployError(e.message);
+    } finally {
+      setDeployLoading(false);
+    }
+  }
+
+  async function copyToClipboard(text: string, filename: string) {
+    await navigator.clipboard.writeText(text);
+    setCopiedFile(filename);
+    setTimeout(() => setCopiedFile(''), 2000);
+  }
 
   const inp = 'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-violet-500';
 
@@ -94,6 +119,51 @@ export default function DeployPanel({ models }: Props) {
               );
             })}
           </div>
+        </div>
+      )}
+
+      {/* Docker Deployment */}
+      {model && (
+        <div>
+          <h4 className="text-xs font-semibold text-gray-700 mb-2 flex items-center gap-2">
+            <Container size={14} className="text-violet-500" />
+            Docker 部署
+          </h4>
+          {!deployInfo ? (
+            <button onClick={generateDeploy} disabled={deployLoading}
+              className="w-full py-2.5 bg-violet-600 text-white rounded-lg text-sm font-medium hover:bg-violet-700 disabled:bg-gray-300 transition-colors cursor-pointer flex items-center justify-center gap-2">
+              {deployLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Container size={14} />}
+              {deployLoading ? '生成中...' : '生成 Docker 部署文件'}
+            </button>
+          ) : (
+            <div className="space-y-3">
+              <p className="text-xs text-gray-500">{deployInfo.model_name} ({deployInfo.model_format})</p>
+              {/* File tabs */}
+              {Object.entries(deployInfo.files as Record<string, string>).map(([name, content]) => (
+                <div key={name} className="border border-gray-200 rounded-lg overflow-hidden">
+                  <div className="flex items-center justify-between bg-gray-50 px-3 py-1.5 border-b border-gray-200">
+                    <span className="text-xs font-mono text-gray-600">{name}</span>
+                    <button onClick={() => copyToClipboard(content as string, name)}
+                      className="flex items-center gap-1 text-xs text-gray-500 hover:text-violet-600 cursor-pointer">
+                      {copiedFile === name ? <Check size={12} className="text-emerald-500" /> : <Copy size={12} />}
+                      {copiedFile === name ? '已复制' : '复制'}
+                    </button>
+                  </div>
+                  <pre className="text-[10px] p-3 max-h-40 overflow-y-auto bg-white text-gray-700 font-mono leading-relaxed">{content as string}</pre>
+                </div>
+              ))}
+              {/* Instructions */}
+              <div className="bg-gray-50 rounded-lg p-3">
+                <p className="text-xs font-medium text-gray-700 mb-2">部署步骤</p>
+                <ol className="space-y-1">
+                  {deployInfo.instructions.map((s: string, i: number) => (
+                    <li key={i} className="text-xs text-gray-600">{s}</li>
+                  ))}
+                </ol>
+              </div>
+            </div>
+          )}
+          {deployError && <div className="text-xs text-red-500 mt-2">{deployError}</div>}
         </div>
       )}
 
