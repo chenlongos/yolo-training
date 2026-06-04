@@ -21,14 +21,15 @@ def _get_adapter(weights_path: str) -> "ModelAdapter":
     return _model_cache[weights_path]
 
 
-def _resolve_model_path(m: dict, fmt: str) -> str:
-    """Resolve model file path for the given format."""
-    if fmt == "onnx":
-        path = m.get("onnx_path")
-        if path and Path(path).exists():
-            return path
-        raise HTTPException(400, detail="ONNX model not available, export it first")
-    # Default: PT weights
+def _resolve_model_path(m: dict) -> str:
+    """Auto-detect model file path: use ONNX for exported models, PT for originals."""
+    # If model has format_type and ONNX path, use ONNX
+    if m.get("format_type") and "onnx" in str(m.get("format_type", "")):
+        for key in ["int8_onnx_path", "fp16_onnx_path", "onnx_path"]:
+            path = m.get(key)
+            if path and Path(path).exists():
+                return path
+    # Default: weights_path (works for both PT and format-specific children)
     path = m.get("weights_path")
     if not path or not Path(path).exists():
         raise HTTPException(400, detail="Model weights not available")
@@ -143,11 +144,10 @@ async def predict_image(
     model_id: str,
     file: UploadFile = File(...),
     conf: float = Query(0.25),
-    format: str = Query("pt"),
     user: dict = Depends(get_current_user),
 ):
     m = _own_model(model_id, user)
-    weights = _resolve_model_path(m, format)
+    weights = _resolve_model_path(m)
 
     # Save uploaded file
     tmp_dir = Path(tempfile.mkdtemp())
@@ -208,11 +208,10 @@ async def predict_video(
     conf: float = Query(0.25),
     sample_count: int = Query(4),
     frame_skip: int = Query(10),
-    format: str = Query("pt"),
     user: dict = Depends(get_current_user),
 ):
     m = _own_model(model_id, user)
-    weights = _resolve_model_path(m, format)
+    weights = _resolve_model_path(m)
 
     # Save uploaded video to temp
     tmp_dir = Path(tempfile.mkdtemp())
