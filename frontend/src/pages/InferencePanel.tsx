@@ -1,7 +1,6 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
-import { Upload, Play, Loader2, Crosshair, Image, Video, Camera, StopCircle, Monitor } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import { Upload, Play, Loader2, Crosshair, Image, Video, Camera, StopCircle } from 'lucide-react';
 import type { TrainedModel } from '../types';
-import { loadModel, isModelLoaded, runInference as browserInfer, drawBoxes, type Detection as BrowserDetection } from '../inference/browserYolo';
 
 interface Detection {
   class: string;
@@ -54,12 +53,6 @@ export default function InferencePanel({ models, activeModelId }: Props) {
   const liveTimer = useRef<number>(0);
   const wsRef = useRef<WebSocket | null>(null);
   const fpsRef = useRef<number[]>([]);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-
-  // Browser-side inference
-  const [useBrowser, setUseBrowser] = useState(false);
-  const [browserLoading, setBrowserLoading] = useState(false);
-  const [browserLoaded, setBrowserLoaded] = useState(false);
 
   const completedModels = models.filter(m => m.status === 'completed' && m.weights_path);
 
@@ -76,7 +69,6 @@ export default function InferencePanel({ models, activeModelId }: Props) {
   function stopLiveLoop() {
     if (liveTimer.current) { clearTimeout(liveTimer.current); liveTimer.current = 0; }
     if (wsRef.current) { wsRef.current.close(); wsRef.current = null; }
-    stopBrowserLoop();
     setLiveActive(false);
     fpsRef.current = [];
   }
@@ -133,63 +125,7 @@ export default function InferencePanel({ models, activeModelId }: Props) {
     setError('');
   }
 
-  async function loadBrowserModel() {
-    if (!selectedModel) return;
-    setBrowserLoading(true);
-    try {
-      const url = `/api/v1/models/${selectedModel}/download/onnx`;
-      // Get class count from model metrics or assume 1
-      const m = completedModels.find(x => x.id === selectedModel);
-      const nc = 1; // default single-class model
-      await loadModel(url, nc);
-      setBrowserLoaded(true);
-    } catch (e: any) {
-      setError('浏览器模型加载失败: ' + (e.message || ''));
-    } finally {
-      setBrowserLoading(false);
-    }
-  }
-
-  function startBrowserLoop() {
-    if (!camActive || !browserLoaded) return;
-    setUseBrowser(true);
-    setLiveActive(true);
-    setLiveResult(null);
-    fpsRef.current = [];
-
-    async function tick() {
-      if (!videoRef.current) return;
-      const now = Date.now();
-      try {
-        const dets = await browserInfer(videoRef.current);
-        // Draw on canvas
-        const canvas = canvasRef.current;
-        if (canvas && videoRef.current) {
-          canvas.width = videoRef.current.videoWidth;
-          canvas.height = videoRef.current.videoHeight;
-          const ctx = canvas.getContext('2d')!;
-          ctx.drawImage(videoRef.current, 0, 0);
-          const b64 = drawBoxes(canvas, dets, ['object']);
-          const imgB64 = b64.split(',')[1] || '';
-          setLiveResult({ detections: dets as any, count: dets.length, image_base64: imgB64 });
-        }
-        fpsRef.current = [...fpsRef.current.filter(t => now - t < 2000), now];
-        setLiveFps(fpsRef.current.length / 2);
-      } catch { /* ignore */ }
-      liveTimer.current = window.setTimeout(tick, 33); // ~30 FPS
-    }
-    tick();
-  }
-
-  function stopBrowserLoop() {
-    if (liveTimer.current) { clearTimeout(liveTimer.current); liveTimer.current = 0; }
-    setUseBrowser(false);
-    setLiveActive(false);
-  }
-
   function switchMode(m: Mode) {
-    stopLiveLoop();
-    stopBrowserLoop();
     stopLiveLoop();
     stopCamera();
     setMode(m);
@@ -312,8 +248,7 @@ export default function InferencePanel({ models, activeModelId }: Props) {
           <div className="relative bg-black rounded-lg overflow-hidden">
             {/* Keep video always mounted for frame capture; hide with opacity when showing result */}
             <video ref={videoRef} autoPlay playsInline muted
-              className={`w-full aspect-video object-cover ${(liveActive && liveResult?.image_base64 && !useBrowser) ? 'opacity-0 absolute inset-0' : ''}`} />
-            <canvas ref={canvasRef} className="hidden" />
+              className={`w-full aspect-video object-cover ${liveActive && liveResult?.image_base64 ? 'opacity-0 absolute inset-0' : ''}`} />
             {liveActive && liveResult?.image_base64 && (
               <img src={`data:image/jpeg;base64,${liveResult.image_base64}`} alt="live" className="w-full aspect-video object-cover" />
             )}
@@ -334,9 +269,9 @@ export default function InferencePanel({ models, activeModelId }: Props) {
             {/* Detection overlay badge */}
             {liveActive && (
               <div className="absolute top-2 left-2 flex items-center gap-2">
-                <span className={`px-2 py-0.5 rounded-full text-white text-xs flex items-center gap-1 ${useBrowser ? 'bg-emerald-600' : 'bg-black/60'}`}>
+                <span className="px-2 py-0.5 rounded-full bg-black/60 text-white text-xs flex items-center gap-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  {useBrowser ? '浏览器' : ''} {liveFps > 0 ? `${liveFps.toFixed(0)} FPS` : '...'}
+                  {liveFps > 0 ? `${liveFps.toFixed(0)} FPS` : '...'}
                 </span>
                 {liveResult && (
                   <span className="px-2 py-0.5 rounded-full bg-black/60 text-white text-xs flex items-center gap-1">
@@ -348,37 +283,18 @@ export default function InferencePanel({ models, activeModelId }: Props) {
             )}
           </div>
           {camActive && (
-            <div className="space-y-2 mt-2">
-              {/* Browser model loading */}
-              {!browserLoaded && (
-                <button onClick={loadBrowserModel} disabled={!selectedModel || browserLoading}
-                  className="w-full py-2 bg-emerald-600 text-white rounded-lg text-sm font-medium hover:bg-emerald-700 disabled:bg-gray-300 transition-colors cursor-pointer flex items-center justify-center gap-2">
-                  {browserLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Monitor size={14} />}
-                  {browserLoading ? '加载中...' : '加载浏览器模型 (极速推理)'}
+            <div className="flex gap-2 mt-2">
+              {!liveActive ? (
+                <button onClick={startLiveLoop} disabled={!selectedModel}
+                  className="flex-1 py-2 bg-violet-600 text-white rounded-lg text-sm font-medium hover:bg-violet-700 disabled:bg-gray-300 transition-colors cursor-pointer flex items-center justify-center gap-2">
+                  <Play size={14} /> 开始实时推理
+                </button>
+              ) : (
+                <button onClick={stopLiveLoop}
+                  className="flex-1 py-2 bg-red-500 text-white rounded-lg text-sm font-medium hover:bg-red-600 transition-colors cursor-pointer flex items-center justify-center gap-2">
+                  <StopCircle size={14} /> 停止推理
                 </button>
               )}
-              {/* Inference controls */}
-              <div className="flex gap-2">
-                {!liveActive ? (
-                  <>
-                    {browserLoaded && (
-                      <button onClick={startBrowserLoop}
-                        className="flex-1 py-2 bg-emerald-600 text-white rounded-lg text-sm font-medium hover:bg-emerald-700 transition-colors cursor-pointer flex items-center justify-center gap-2">
-                        <Monitor size={14} /> 浏览器推理
-                      </button>
-                    )}
-                    <button onClick={startLiveLoop} disabled={!selectedModel}
-                      className="flex-1 py-2 bg-violet-600 text-white rounded-lg text-sm font-medium hover:bg-violet-700 disabled:bg-gray-300 transition-colors cursor-pointer flex items-center justify-center gap-2">
-                      <Play size={14} /> 服务端推理
-                    </button>
-                  </>
-                ) : (
-                  <button onClick={stopLiveLoop}
-                    className="flex-1 py-2 bg-red-500 text-white rounded-lg text-sm font-medium hover:bg-red-600 transition-colors cursor-pointer flex items-center justify-center gap-2">
-                    <StopCircle size={14} /> 停止推理
-                  </button>
-                )}
-              </div>
             </div>
           )}
           {/* Detection details */}
