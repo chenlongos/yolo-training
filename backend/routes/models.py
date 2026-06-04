@@ -61,7 +61,7 @@ def delete_model(model_id: str, user: dict = Depends(get_current_user)):
 @router.get("/{model_id}/download/{format}")
 def download_model(model_id: str, format: str, user: dict = Depends(get_current_user)):
     m = _own_model(model_id, user)
-    path_map = {"pt": m.get("weights_path"), "onnx": m.get("onnx_path"), "int8_onnx": m.get("int8_onnx_path")}
+    path_map = {"pt": m.get("weights_path"), "onnx": m.get("onnx_path"), "fp16_onnx": m.get("fp16_onnx_path"), "int8_onnx": m.get("int8_onnx_path")}
     fp = path_map.get(format)
     if not fp: raise HTTPException(404, detail=f"Format '{format}' not available")
     p = Path(fp)
@@ -75,6 +75,20 @@ def export_model(model_id: str, format: str = "onnx", user: dict = Depends(get_c
         path = export_model_to_onnx(model_id)
         if path: return {"format": "onnx", "path": path, "download_url": f"/api/v1/models/{model_id}/download/onnx"}
         raise HTTPException(500, detail="ONNX export failed")
+    if format == "fp16_onnx":
+        try:
+            from training_engine.adapter import ModelAdapter
+            weights = m.get("weights_path")
+            if not weights: raise HTTPException(400, detail="No weights available")
+            adapter = ModelAdapter(weights)
+            path = adapter.export(format_name="onnx", half=True)
+            if path:
+                fp16_path = str(Path(path).parent / "best_fp16.onnx")
+                db["trained_models"].update(model_id, {"fp16_onnx_path": fp16_path})
+                return {"format": "fp16_onnx", "path": fp16_path, "download_url": f"/api/v1/models/{model_id}/download/fp16_onnx"}
+        except Exception as e:
+            raise HTTPException(500, detail=f"FP16 export failed: {e}")
+        raise HTTPException(500, detail="FP16 export failed")
     if format == "int8_onnx":
         # Ensure ONNX exists first
         onnx_path = m.get("onnx_path")

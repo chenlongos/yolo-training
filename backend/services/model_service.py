@@ -21,7 +21,7 @@ def export_model_to_onnx(model_id: str) -> str | None:
 
 def get_model_formats(model: dict) -> list[dict]:
     formats = []
-    for fmt, key in [("pt", "weights_path"), ("onnx", "onnx_path"), ("int8_onnx", "int8_onnx_path")]:
+    for fmt, key in [("pt", "weights_path"), ("onnx", "onnx_path"), ("fp16_onnx", "fp16_onnx_path"), ("int8_onnx", "int8_onnx_path")]:
         if model.get(key) and Path(model[key]).exists():
             formats.append({"format": fmt, "label": f"{fmt.upper()}", "path": model[key]})
     return formats

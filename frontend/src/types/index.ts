@@ -75,6 +75,7 @@ export interface TrainedModel {
   status: string;
   weights_path?: string;
   onnx_path?: string;
+  fp16_onnx_path?: string;
   int8_onnx_path?: string;
   metrics?: Record<string, number>;
   created_at: string;

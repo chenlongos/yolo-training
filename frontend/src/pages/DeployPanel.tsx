@@ -8,8 +8,9 @@ interface Props {
 }
 
 const FORMATS = [
-  { value: 'onnx', label: 'ONNX', desc: '跨平台推理，CPU/GPU 通用', key: 'onnx_path' as const },
-  { value: 'int8_onnx', label: 'INT8 ONNX', desc: '量化模型，体积更小速度更快', key: 'int8_onnx_path' as const, requires: 'onnx_path' as const },
+  { value: 'onnx', label: 'ONNX (FP32)', desc: '全精度，跨平台推理', key: 'onnx_path' as const },
+  { value: 'fp16_onnx', label: 'ONNX (FP16)', desc: '半精度，体积减半，速度更快', key: 'fp16_onnx_path' as const },
+  { value: 'int8_onnx', label: 'ONNX (INT8)', desc: '8-bit 量化，最小体积，最快速度', key: 'int8_onnx_path' as const, requires: 'onnx_path' as const },
 ];
 
 export default function DeployPanel({ models }: Props) {

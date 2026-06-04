@@ -215,7 +215,7 @@ export default function Workspace() {
                       if (activeDataset) datasets.images(activeDataset, imgPage).then(d => { setImgList(d.items); setImgTotal(d.total); });
                     }} />
                 ); })()}
-                {rightPanel === 'models' && <ModelPanel models={activeModels} jobs={trainingJobs} onSelect={id => { setActiveModelId(id); setRightPanel('modelDetail'); }} onDelete={handleDeleteModel} onCancelJob={handleCancelJob} />}
+                {rightPanel === 'models' && <ModelPanel models={activeModels} jobs={trainingJobs} onSelect={id => { setActiveModelId(id); setRightPanel('modelDetail'); }} onDelete={handleDeleteModel} onCancelJob={handleCancelJob} onInference={(id) => { setActiveModelId(id); setRightPanel('inference'); }} />}
                 {rightPanel === 'modelDetail' && activeModelObj && <ModelDetail model={activeModelObj} onDelete={handleDeleteModel} onCancelJob={handleCancelJob} onInference={(id) => { setActiveModelId(id); setRightPanel('inference'); }} />}
                 {rightPanel === 'inference' && <InferencePanel models={activeModels} activeModelId={activeModelId} />}
                 {rightPanel === 'deploy' && <DeployPanel models={activeModels} />}
@@ -258,11 +258,11 @@ export default function Workspace() {
                 {activeProject ? (
                   <>
                     <button onClick={() => setActiveProject('')} className="text-sm text-gray-500 hover:text-gray-700 mb-4 block">← 所有项目</button>
-                    <ModelPanel models={activeModels} jobs={trainingJobs} onSelect={id => { setActiveModelId(id); setRightPanel('modelDetail'); }} onDelete={handleDeleteModel} onCancelJob={handleCancelJob} />
+                    <ModelPanel models={activeModels} jobs={trainingJobs} onSelect={id => { setActiveModelId(id); setRightPanel('modelDetail'); }} onDelete={handleDeleteModel} onCancelJob={handleCancelJob} onInference={(id) => { setActiveModelId(id); setRightPanel('inference'); }} />
                     {activeModelObj && rightPanel === 'modelDetail' && <div className="mt-4"><ModelDetail model={activeModelObj} onDelete={handleDeleteModel} onCancelJob={handleCancelJob} onInference={(id) => { setActiveModelId(id); setRightPanel('inference'); }} /></div>}
                   </>
                 ) : (
-                  <ModelPanel models={modelList} jobs={trainingJobs} onSelect={() => {}} onDelete={handleDeleteModel} onCancelJob={handleCancelJob} />
+                  <ModelPanel models={modelList} jobs={trainingJobs} onSelect={() => {}} onDelete={handleDeleteModel} onCancelJob={handleCancelJob} onInference={(id) => { setActiveModelId(id); setRightPanel('inference'); }} />
                 )}
               </div>
             ) : (
