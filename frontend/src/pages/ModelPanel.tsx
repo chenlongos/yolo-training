@@ -11,6 +11,10 @@ interface Props {
 }
 
 export default function ModelPanel({ models: list, jobs = [], onSelect, onDelete, onCancelJob }: Props) {
+  const fmtBadge = (label: string) => (
+    <span className="text-[9px] px-1.5 py-0.5 rounded font-medium">{label}</span>
+  );
+
   return (
     <div className="w-full">
       <h3 className="text-sm font-semibold text-gray-800 mb-4">模型</h3>
@@ -59,8 +63,10 @@ export default function ModelPanel({ models: list, jobs = [], onSelect, onDelete
           <div key={m.id} className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 hover:shadow-md transition-all group">
             <div className="flex items-center justify-between mb-3">
               <h4 className="font-medium text-gray-800 text-sm cursor-pointer" onClick={() => onSelect(m.id)}>{m.name}</h4>
-              <div className="flex items-center gap-1.5">
-                <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">completed</span>
+              <div className="flex items-center gap-1">
+                {m.onnx_path && <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-medium">ONNX</span>}
+                {m.int8_onnx_path && <span className="text-[9px] px-1.5 py-0.5 rounded bg-orange-100 text-orange-700 font-medium">INT8</span>}
+                <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">done</span>
                 <button onClick={(e) => { e.stopPropagation(); onDelete(m.id, m.name); }}
                   className="p-1 rounded-md text-gray-300 hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-all cursor-pointer"
                   title="删除模型">

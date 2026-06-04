@@ -63,17 +63,23 @@ async def training_progress_ws(
 
 
 @router.websocket("/ws/inference/{model_id}")
-async def inference_ws(websocket: WebSocket, model_id: str, conf: float = 0.25):
+async def inference_ws(websocket: WebSocket, model_id: str, conf: float = 0.25, format: str = "pt"):
     """WebSocket real-time inference: receive JPEG frames, return annotated JPEG."""
-    # Load model once
     m = db["trained_models"].get(model_id)
     if not m:
         await websocket.close(code=4004, reason="Model not found")
         return
-    weights = m.get("weights_path")
-    if not weights or not Path(weights).exists():
-        await websocket.close(code=4004, reason="Weights not available")
-        return
+    # Resolve model path based on format
+    if format == "onnx":
+        weights = m.get("onnx_path")
+        if not weights or not Path(weights).exists():
+            await websocket.close(code=4004, reason="ONNX model not available")
+            return
+    else:
+        weights = m.get("weights_path")
+        if not weights or not Path(weights).exists():
+            await websocket.close(code=4004, reason="Weights not available")
+            return
 
     adapter = _get_ws_adapter(weights)
     await websocket.accept()

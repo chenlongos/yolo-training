@@ -20,6 +20,20 @@ def _get_adapter(weights_path: str) -> "ModelAdapter":
         _model_cache[weights_path] = ModelAdapter(weights_path)
     return _model_cache[weights_path]
 
+
+def _resolve_model_path(m: dict, fmt: str) -> str:
+    """Resolve model file path for the given format."""
+    if fmt == "onnx":
+        path = m.get("onnx_path")
+        if path and Path(path).exists():
+            return path
+        raise HTTPException(400, detail="ONNX model not available, export it first")
+    # Default: PT weights
+    path = m.get("weights_path")
+    if not path or not Path(path).exists():
+        raise HTTPException(400, detail="Model weights not available")
+    return path
+
 def _own_model(mid: str, user: dict) -> dict:
     m = db["trained_models"].get(mid)
     if not m: raise HTTPException(404, detail="Model not found")
@@ -56,11 +70,31 @@ def download_model(model_id: str, format: str, user: dict = Depends(get_current_
 
 @router.post("/{model_id}/export")
 def export_model(model_id: str, format: str = "onnx", user: dict = Depends(get_current_user)):
-    _own_model(model_id, user)
+    m = _own_model(model_id, user)
     if format == "onnx":
         path = export_model_to_onnx(model_id)
         if path: return {"format": "onnx", "path": path, "download_url": f"/api/v1/models/{model_id}/download/onnx"}
         raise HTTPException(500, detail="ONNX export failed")
+    if format == "int8_onnx":
+        # Ensure ONNX exists first
+        onnx_path = m.get("onnx_path")
+        if not onnx_path or not Path(onnx_path).exists():
+            onnx_path = export_model_to_onnx(model_id)
+            if not onnx_path:
+                raise HTTPException(500, detail="ONNX export failed first, cannot quantize")
+        try:
+            from training_engine.adapter import ModelAdapter
+            weights = m.get("weights_path")
+            if not weights: raise HTTPException(400, detail="No weights available")
+            adapter = ModelAdapter(weights)
+            method = "dynamic"  # default
+            quant_path = adapter.export_quantized(int8=True, calibration_method=method)
+            if quant_path:
+                db["trained_models"].update(model_id, {"int8_onnx_path": str(quant_path)})
+                return {"format": "int8_onnx", "path": quant_path, "download_url": f"/api/v1/models/{model_id}/download/int8_onnx"}
+        except Exception as e:
+            raise HTTPException(500, detail=f"INT8 quantization failed: {e}")
+        raise HTTPException(500, detail="INT8 quantization failed")
     raise HTTPException(400, detail=f"Unsupported format: {format}")
 
 @router.post("/{model_id}/predict")
@@ -68,12 +102,11 @@ async def predict_image(
     model_id: str,
     file: UploadFile = File(...),
     conf: float = Query(0.25),
+    format: str = Query("pt"),
     user: dict = Depends(get_current_user),
 ):
     m = _own_model(model_id, user)
-    weights = m.get("weights_path")
-    if not weights or not Path(weights).exists():
-        raise HTTPException(400, detail="Model weights not available")
+    weights = _resolve_model_path(m, format)
 
     # Save uploaded file
     tmp_dir = Path(tempfile.mkdtemp())
@@ -134,12 +167,11 @@ async def predict_video(
     conf: float = Query(0.25),
     sample_count: int = Query(4),
     frame_skip: int = Query(10),
+    format: str = Query("pt"),
     user: dict = Depends(get_current_user),
 ):
     m = _own_model(model_id, user)
-    weights = m.get("weights_path")
-    if not weights or not Path(weights).exists():
-        raise HTTPException(400, detail="Model weights not available")
+    weights = _resolve_model_path(m, format)
 
     # Save uploaded video to temp
     tmp_dir = Path(tempfile.mkdtemp())

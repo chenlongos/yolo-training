@@ -36,6 +36,7 @@ interface Props {
 export default function InferencePanel({ models, activeModelId }: Props) {
   const [mode, setMode] = useState<Mode>('image');
   const [selectedModel, setSelectedModel] = useState(activeModelId || '');
+  const [inferFormat, setInferFormat] = useState('pt');
   const [file, setFile] = useState<{ file: File; url: string } | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -77,7 +78,7 @@ export default function InferencePanel({ models, activeModelId }: Props) {
     if (!selectedModel || !camActive) return;
 
     const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const ws = new WebSocket(`${protocol}//${location.host}/ws/inference/${selectedModel}?conf=0.25`);
+    const ws = new WebSocket(`${protocol}//${location.host}/ws/inference/${selectedModel}?conf=0.25&format=${inferFormat}`);
     ws.binaryType = 'arraybuffer';
     wsRef.current = ws;
 
@@ -186,7 +187,7 @@ export default function InferencePanel({ models, activeModelId }: Props) {
       const fd = new FormData();
       fd.append('file', file.file);
       const endpoint = mode === 'video' ? 'predict-video' : 'predict';
-      const resp = await fetch(`/api/v1/models/${selectedModel}/${endpoint}?conf=0.25`, {
+      const resp = await fetch(`/api/v1/models/${selectedModel}/${endpoint}?conf=0.25&format=${inferFormat}`, {
         method: 'POST',
         body: fd,
       });
@@ -231,7 +232,7 @@ export default function InferencePanel({ models, activeModelId }: Props) {
       {/* Model selector */}
       <div>
         <label className={lbl}>选择模型</label>
-        <select value={selectedModel} onChange={e => setSelectedModel(e.target.value)} className={inp}>
+        <select value={selectedModel} onChange={e => { setSelectedModel(e.target.value); setInferFormat('pt'); }} className={inp}>
           <option value="">-- 选择已训练模型 --</option>
           {completedModels.map(m => (
             <option key={m.id} value={m.id}>{m.name}{m.metrics ? ` (mAP50: ${typeof m.metrics.mAP50 === 'number' ? m.metrics.mAP50.toFixed(3) : '-'})` : ''}</option>
@@ -241,6 +242,29 @@ export default function InferencePanel({ models, activeModelId }: Props) {
           <p className="text-xs text-amber-600 mt-1">暂无已完成训练的模型</p>
         )}
       </div>
+
+      {/* Inference format */}
+      {selectedModel && (() => {
+        const m = completedModels.find(x => x.id === selectedModel);
+        const hasOnnx = m?.onnx_path;
+        if (!hasOnnx) return null;
+        return (
+          <div>
+            <label className={lbl}>推理引擎</label>
+            <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
+              {[
+                ['pt', 'PyTorch'],
+                ['onnx', 'ONNX'],
+              ].map(([f, label]) => (
+                <button key={f} onClick={() => setInferFormat(f)}
+                  className={`flex-1 py-1.5 text-xs font-medium rounded-md cursor-pointer transition-colors ${inferFormat === f ? 'bg-white text-violet-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Camera mode */}
       {mode === 'camera' && (

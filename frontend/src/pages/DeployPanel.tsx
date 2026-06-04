@@ -9,6 +9,7 @@ interface Props {
 
 const FORMATS = [
   { value: 'onnx', label: 'ONNX', desc: '跨平台推理，CPU/GPU 通用', key: 'onnx_path' as const },
+  { value: 'int8_onnx', label: 'INT8 ONNX', desc: '量化模型，体积更小速度更快', key: 'int8_onnx_path' as const, requires: 'onnx_path' as const },
 ];
 
 export default function DeployPanel({ models }: Props) {
@@ -16,6 +17,7 @@ export default function DeployPanel({ models }: Props) {
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState('');
   const [modelDetail, setModelDetail] = useState<TrainedModel | null>(null);
+  const [quantMethod, setQuantMethod] = useState('dynamic');
 
   const completedModels = models.filter(m => m.status === 'completed' && m.weights_path);
   const model = completedModels.find(m => m.id === selectedModel);
@@ -31,7 +33,9 @@ export default function DeployPanel({ models }: Props) {
     setExporting(true);
     setError('');
     try {
-      await fetch(`/api/v1/models/${selectedModel}/export?format=${format}`, { method: 'POST' });
+      const params = new URLSearchParams({ format });
+      if (format === 'int8_onnx') params.append('method', quantMethod);
+      await fetch(`/api/v1/models/${selectedModel}/export?${params}`, { method: 'POST' });
       // Refresh model to get updated format list
       const resp = await fetch(`/api/v1/models/${selectedModel}`);
       const updated = await resp.json();
@@ -105,27 +109,50 @@ export default function DeployPanel({ models }: Props) {
             {/* Exportable formats */}
             {FORMATS.map(f => {
               const hasFormat = !!(modelDetail as any)[f.key];
+              const prereq = f.requires ? !!(modelDetail as any)[f.requires] : true;
+              const disabled = !prereq && !hasFormat;
+              const isInt8 = f.value === 'int8_onnx';
               return (
                 <div key={f.value}
-                  className={`flex items-center justify-between rounded-lg p-4 border ${hasFormat ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-gray-200'}`}>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium text-gray-800">{f.label}</span>
-                      {hasFormat && <CheckCircle2 size={14} className="text-emerald-500" />}
+                  className={`rounded-lg p-4 border ${hasFormat ? 'bg-emerald-50 border-emerald-200' : disabled ? 'bg-gray-50 border-gray-100 opacity-60' : 'bg-white border-gray-200'}`}>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-gray-800">{f.label}</span>
+                        {hasFormat && <CheckCircle2 size={14} className="text-emerald-500" />}
+                      </div>
+                      <div className="text-xs text-gray-500">{disabled ? '需先导出 ONNX' : f.desc}</div>
                     </div>
-                    <div className="text-xs text-gray-500">{f.desc}</div>
+                    {hasFormat ? (
+                      <a href={modelApi.downloadUrl(modelDetail.id, f.value)}
+                        className="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-medium hover:bg-emerald-700 no-underline cursor-pointer flex items-center gap-2 shrink-0">
+                        <FileDown size={14} /> 下载
+                      </a>
+                    ) : (
+                      <button onClick={() => handleExport(f.value)} disabled={exporting || disabled}
+                        className="px-4 py-2 bg-violet-600 text-white rounded-lg text-sm font-medium hover:bg-violet-700 disabled:bg-gray-300 transition-colors cursor-pointer flex items-center gap-2 shrink-0">
+                        {exporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Rocket size={14} />}
+                        导出
+                      </button>
+                    )}
                   </div>
-                  {hasFormat ? (
-                    <a href={modelApi.downloadUrl(modelDetail.id, f.value)}
-                      className="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-medium hover:bg-emerald-700 no-underline cursor-pointer flex items-center gap-2">
-                      <FileDown size={14} /> 下载
-                    </a>
-                  ) : (
-                    <button onClick={() => handleExport(f.value)} disabled={exporting}
-                      className="px-4 py-2 bg-violet-600 text-white rounded-lg text-sm font-medium hover:bg-violet-700 disabled:bg-gray-300 transition-colors cursor-pointer flex items-center gap-2">
-                      {exporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Rocket size={14} />}
-                      导出
-                    </button>
+                  {/* Quantization options for INT8 */}
+                  {isInt8 && !hasFormat && !disabled && (
+                    <div className="mt-3 pt-3 border-t border-gray-100">
+                      <label className="text-xs text-gray-500 mb-1.5 block">量化方式</label>
+                      <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
+                        {[
+                          ['dynamic', '动态量化', '快速，无需校准数据'],
+                          ['static', '静态量化', '更精准，需校准图像'],
+                        ].map(([val, label, desc]) => (
+                          <button key={val} onClick={() => setQuantMethod(val)}
+                            className={`flex-1 py-1.5 px-2 text-xs rounded-md cursor-pointer transition-colors ${quantMethod === val ? 'bg-white text-violet-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                            title={desc}>
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                   )}
                 </div>
               );

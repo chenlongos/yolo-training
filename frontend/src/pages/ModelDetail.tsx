@@ -46,6 +46,13 @@ export default function ModelDetail({ model: m, onDelete, onInference }: Props) 
           ))}
         </div>
       )}
+      {/* Format badges */}
+      <div className="flex items-center gap-2 mt-4">
+        <span className="text-xs text-gray-500">可用格式:</span>
+        <span className="text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-700 font-medium">PT</span>
+        {m.onnx_path && <span className="text-xs px-2 py-0.5 rounded bg-amber-100 text-amber-700 font-medium">ONNX</span>}
+        {m.int8_onnx_path && <span className="text-xs px-2 py-0.5 rounded bg-orange-100 text-orange-700 font-medium">INT8</span>}
+      </div>
     </div>
   );
 }
