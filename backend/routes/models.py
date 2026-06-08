@@ -62,7 +62,7 @@ def delete_model(model_id: str, user: dict = Depends(get_current_user)):
 @router.get("/{model_id}/download/{format}")
 def download_model(model_id: str, format: str, user: dict = Depends(get_current_user)):
     m = _own_model(model_id, user)
-    path_map = {"pt": m.get("weights_path"), "onnx": m.get("onnx_path"), "fp16_onnx": m.get("fp16_onnx_path"), "int8_onnx": m.get("int8_onnx_path")}
+    path_map = {"pt": m.get("weights_path"), "onnx": m.get("onnx_path"), "fp16_onnx": m.get("fp16_onnx_path"), "int8_onnx": m.get("int8_onnx_path"), "cvimodel": m.get("cvimodel_path")}
     fp = path_map.get(format)
     if not fp: raise HTTPException(404, detail=f"Format '{format}' not available")
     p = Path(fp)
@@ -85,7 +85,8 @@ def _create_format_model(parent: dict, format_key: str, format_label: str, file_
         "name": f"{parent['name']} ({format_label})",
         "status": "completed",
         "weights_path": file_path,
-        "onnx_path": file_path if "onnx" in format_key else None,
+        "onnx_path": file_path if "onnx" in format_key and format_key != "cvimodel" else None,
+        "cvimodel_path": file_path if format_key == "cvimodel" else None,
         "parent_model_id": parent["id"],
         "format_type": format_key,
         "metrics": parent.get("metrics"),
@@ -118,6 +119,9 @@ def export_model(model_id: str, format: str = "onnx", user: dict = Depends(get_c
             return {"format": "fp16_onnx", "path": fp16_path, "download_url": f"/api/v1/models/{child['id']}/download/fp16_onnx", "model_id": child["id"]}
         except Exception as e:
             raise HTTPException(500, detail=f"FP16 export failed: {e}")
+    if format == "cvimodel":
+        from backend.services.cvimodel_service import generate_cvimodel_guide
+        return generate_cvimodel_guide(model_id)
     if format == "int8_onnx":
         onnx_path = m.get("onnx_path")
         if not onnx_path or not Path(onnx_path).exists():
@@ -286,6 +290,13 @@ async def predict_video(
     finally:
         try: shutil.rmtree(tmp_dir)
         except Exception: pass
+
+
+@router.get("/cvimodel/status")
+def cvimodel_docker_status(user: dict = Depends(get_current_user)):
+    """Check if Docker and the sophgo/tpuc_dev image are ready for cvimodel conversion."""
+    from backend.services.cvimodel_service import check_docker_status
+    return check_docker_status()
 
 
 @router.get("/{model_id}/deploy")

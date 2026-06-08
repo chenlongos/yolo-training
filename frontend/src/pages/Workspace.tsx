@@ -43,6 +43,7 @@ export default function Workspace() {
   const [uploading, setUploading] = useState(false);
 
   // 弹窗
+  const [projectThumbs, setProjectThumbs] = useState<Record<string, string>>({});
   const [showNewProject, setShowNewProject] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
   const [annotateOpen, setAnnotateOpen] = useState(false);
@@ -53,6 +54,19 @@ export default function Workspace() {
 
   // 加载
   useEffect(() => { projects.list().then(d => setProjectList(d.items)).catch(() => {}); }, []);
+
+  // 加载项目缩略图（每个项目第一张图片）
+  useEffect(() => {
+    projectList.forEach(p => {
+      if (projectThumbs[p.id]) return; // already loaded
+      projectData.images(p.id, 1).then(d => {
+        if (d.items.length > 0) {
+          const thumb = d.items[0].thumbnail_url || d.items[0].image_url;
+          if (thumb) setProjectThumbs(prev => ({ ...prev, [p.id]: thumb }));
+        }
+      }).catch(() => {});
+    });
+  }, [projectList]);
 
   // URL → state 解析
   useEffect(() => {
@@ -186,7 +200,8 @@ export default function Workspace() {
         <div className="flex-1 flex overflow-hidden">
           {activeProject && navTab === 'projects' && (
             <ProjectSidebar
-              projectName={projectName} models={activeModels}
+              projectName={projectName} thumbnailUrl={projectThumbs[activeProject]}
+              models={activeModels}
               totalImages={imgTotal} rightPanel={rightPanel}
               onBack={() => setActiveProject('')}
               onRightPanel={(p) => { setRightPanel(p); }}
@@ -249,7 +264,11 @@ export default function Workspace() {
                         <div key={p.id} onClick={() => setActiveProject(p.id)}
                           className="flex items-start gap-4 p-4 border border-gray-200 rounded-xl hover:shadow-md transition-shadow cursor-pointer bg-white">
                           <div className="w-20 h-20 rounded-lg overflow-hidden shrink-0 bg-gradient-to-br from-violet-100 to-purple-100 flex items-center justify-center">
-                            <span className="text-2xl font-bold text-[#7c3aed]">{p.name[0]?.toUpperCase()}</span>
+                            {projectThumbs[p.id] ? (
+                              <img src={projectThumbs[p.id]} alt="" className="w-full h-full object-cover" />
+                            ) : (
+                              <span className="text-2xl font-bold text-[#7c3aed]">{p.name[0]?.toUpperCase()}</span>
+                            )}
                           </div>
                           <div className="flex-1 min-w-0">
                             <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded">Object Detection</span>

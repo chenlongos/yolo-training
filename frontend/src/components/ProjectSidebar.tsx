@@ -1,4 +1,4 @@
-import { UploadCloud, Edit3, Database, Tag, Cpu, Box, Rocket, ChevronDown, Plus, MoreHorizontal, Layout, Crosshair } from 'lucide-react';
+import { UploadCloud, Edit3, Database, Tag, Cpu, Box, Rocket, ChevronDown, ArrowLeft, MoreHorizontal, Layout, Crosshair } from 'lucide-react';
 import type { TrainedModel } from '../types';
 
 export type RightPanel = 'upload' | 'data' | 'dataset' | 'models' | 'modelDetail' | 'inference' | 'deploy' | 'train' | null;
@@ -18,6 +18,7 @@ interface NavSectionData {
 
 interface Props {
   projectName: string;
+  thumbnailUrl?: string;
   models: TrainedModel[];
   totalImages: number;
   rightPanel: RightPanel;
@@ -73,8 +74,8 @@ export default function ProjectSidebar(props: Props) {
   return (
     <nav className="w-44 bg-gray-50/60 border-r border-gray-200 flex flex-col shrink-0 h-full py-2 gap-3">
       <button onClick={props.onBack}
-        className="flex w-full items-center gap-2 px-3 py-2 text-[11px] font-semibold uppercase text-gray-500 transition-all rounded hover:bg-gray-200/50 hover:text-gray-900">
-        <Plus size={14} className="shrink-0" />
+        className="flex w-full items-center gap-2 px-3 py-2 text-[11px] font-semibold uppercase text-gray-500 transition-all rounded hover:bg-gray-200/50 hover:text-gray-900 cursor-pointer">
+        <ArrowLeft size={14} className="shrink-0" />
         <span className="truncate">工作区</span>
       </button>
 
@@ -84,9 +85,13 @@ export default function ProjectSidebar(props: Props) {
           <span>Object Detection</span>
         </div>
         <div className="relative h-20 w-full -mt-1.5 overflow-hidden rounded-b-lg border border-gray-100 bg-gray-50">
-          <div className="h-full w-full bg-gradient-to-br from-violet-100 to-purple-200 flex items-center justify-center">
-            <span className="text-2xl font-bold text-violet-400">{props.projectName[0]?.toUpperCase()}</span>
-          </div>
+          {props.thumbnailUrl ? (
+            <img src={props.thumbnailUrl} alt="" className="h-full w-full object-cover" />
+          ) : (
+            <div className="h-full w-full bg-gradient-to-br from-violet-100 to-purple-200 flex items-center justify-center">
+              <span className="text-2xl font-bold text-violet-400">{props.projectName[0]?.toUpperCase()}</span>
+            </div>
+          )}
         </div>
         <div className="flex items-center justify-between py-2">
           <span className="flex-1 truncate text-sm font-medium text-gray-900 pl-1" title={props.projectName}>{props.projectName}</span>
