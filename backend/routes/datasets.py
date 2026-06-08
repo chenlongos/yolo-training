@@ -5,7 +5,7 @@ from fastapi.responses import FileResponse
 from backend.store import db
 from backend.schemas.dataset import DatasetCreate, AnnotationBulkUpdate, AnnotationCreate, LabelClassCreate
 from backend.dependencies import get_current_user, resolve_project_dataset
-from backend.services.dataset_service import upload_images, get_or_create_default_class
+from backend.services.dataset_service import upload_images, get_or_create_default_class, save_yolo_labels, load_yolo_labels
 from backend.services.yolo_export_service import generate_yolo_dataset
 from backend.services.storage_service import storage_service
 
@@ -98,10 +98,7 @@ def get_thumb(image_id: str, user: dict = Depends(get_current_user)):
 @router.get("/images/{image_id}")
 def get_image_detail(image_id: str, user: dict = Depends(get_current_user)):
     img = _own_img(image_id, user)
-    anns = db["annotations"].filter(lambda a: a["image_id"] == image_id)
-    for a in anns:
-        cls = db["label_classes"].get(a["class_id"])
-        a["class_name"] = cls["name"] if cls else ""
+    anns = load_yolo_labels(image_id)
     return {"image": img, "annotations": anns}
 
 @router.delete("/images/{image_id}", status_code=204)
@@ -111,17 +108,15 @@ def delete_image(image_id: str, user: dict = Depends(get_current_user)):
     if ds: db["datasets"].update(ds["id"], {"image_count": max(0, ds["image_count"] - 1)})
     for ann in db["annotations"].filter(lambda a: a["image_id"] == image_id):
         db["annotations"].delete(ann["id"])
+    # Remove YOLO label file if exists
+    save_yolo_labels(image_id)
     db["images"].delete(image_id)
 
 # Annotations
 @router.get("/images/{image_id}/annotations")
 def get_annotations(image_id: str, user: dict = Depends(get_current_user)):
     _own_img(image_id, user)
-    anns = db["annotations"].filter(lambda a: a["image_id"] == image_id)
-    for a in anns:
-        cls = db["label_classes"].get(a["class_id"])
-        a["class_name"] = cls["name"] if cls else ""
-    return anns
+    return load_yolo_labels(image_id)
 
 @router.put("/images/{image_id}/annotations")
 def bulk_update_annotations(image_id: str, data: AnnotationBulkUpdate, user: dict = Depends(get_current_user)):
@@ -133,18 +128,25 @@ def bulk_update_annotations(image_id: str, data: AnnotationBulkUpdate, user: dic
         a = db["annotations"].create({"image_id": image_id, "class_id": ad.class_id, "x_center": ad.x_center, "y_center": ad.y_center, "width": ad.width, "height": ad.height, "created_by": user["id"]})
         new_anns.append(a)
     db["images"].update(image_id, {"status": "annotated" if data.annotations else "uploaded"})
+    # Also write YOLO-format .txt label file alongside the image
+    save_yolo_labels(image_id)
     return {"annotations": new_anns}
 
 @router.post("/images/{image_id}/annotations", status_code=201)
 def create_annotation(image_id: str, data: AnnotationCreate, user: dict = Depends(get_current_user)):
     _own_img(image_id, user)
-    return db["annotations"].create({"image_id": image_id, "class_id": data.class_id, "x_center": data.x_center, "y_center": data.y_center, "width": data.width, "height": data.height, "created_by": user["id"]})
+    a = db["annotations"].create({"image_id": image_id, "class_id": data.class_id, "x_center": data.x_center, "y_center": data.y_center, "width": data.width, "height": data.height, "created_by": user["id"]})
+    save_yolo_labels(image_id)
+    return a
 
 @router.delete("/annotations/{annotation_id}", status_code=204)
 def delete_annotation(annotation_id: str, user: dict = Depends(get_current_user)):
     ann = db["annotations"].get(annotation_id)
-    if ann: _own_img(ann["image_id"], user)
-    db["annotations"].delete(annotation_id)
+    if ann:
+        img_id = ann["image_id"]
+        _own_img(img_id, user)
+        db["annotations"].delete(annotation_id)
+        save_yolo_labels(img_id)
 
 # Classes
 @router.get("/datasets/{dataset_id}/classes")

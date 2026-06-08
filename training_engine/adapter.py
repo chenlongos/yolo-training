@@ -23,6 +23,22 @@ def _resolve_yolo_class() -> type:
         ) from exc
 
 
+def _resolve_device(device: str) -> str:
+    """Auto-detect best available device: MPS > CUDA > CPU.
+    Treats '', 'auto', '0' as auto-detect. Explicit values like 'cpu', 'mps', 'cuda:1' pass through."""
+    if device and device not in ("", "auto", "0"):
+        return device
+    try:
+        import torch
+        if torch.backends.mps.is_available():
+            return "mps"
+        if torch.cuda.is_available():
+            return "0"
+    except ImportError:
+        pass
+    return "cpu"
+
+
 @dataclass
 class ModelAdapter:
     model_path: str
@@ -44,13 +60,56 @@ class ModelAdapter:
         workers: int,
         callbacks: dict | None = None,
     ) -> Any:
+        device = _resolve_device(device)
         kwargs: dict[str, Any] = dict(
             data=data, epochs=epochs, imgsz=imgsz, batch=batch,
             device=device, project=project, name=name, workers=workers,
+            plots=False,
         )
+        # Register callbacks via model.add_callback(), then remove 'callbacks'
+        # from model.overrides — ultralytics' train() merges self.overrides into
+        # args and passes them through cfg validation, which rejects 'callbacks'.
         if callbacks:
-            kwargs["callbacks"] = callbacks
-        return self.model.train(**kwargs)
+            for event, fn in callbacks.items():
+                self.model.add_callback(event, fn)
+        if hasattr(self.model, 'overrides') and 'callbacks' in self.model.overrides:
+            del self.model.overrides['callbacks']
+        result = self.model.train(**kwargs)
+        self._clean_train_artifacts(project, name)
+        return result
+
+    def _clean_train_artifacts(self, project: str, name: str) -> None:
+        """Remove ultralytics' per-epoch visualization artifacts and last.pt.
+
+        Kept:  best.pt, args.yaml, results.csv
+        Removed: last.pt, train_batch*.jpg, val_batch*.jpg, results.png,
+                 *_curve.png, confusion_matrix*.png
+        """
+        from pathlib import Path
+
+        run_dir = Path(project) / name
+        if not run_dir.is_dir():
+            return
+
+        # last.pt duplicates best.pt; we only ship best.pt downstream.
+        last = run_dir / "weights" / "last.pt"
+        if last.is_file():
+            last.unlink()
+            print(f"  removed: {last.relative_to(run_dir.parent.parent) if run_dir.parent.parent in last.parents else last}")
+
+        # Belt-and-braces: strip any visualization files that escaped
+        # `plots=False` (older ultralytics, or a user who overrode it).
+        patterns = [
+            "train_batch*.jpg", "val_batch*.jpg",
+            "results.png",
+            "*_curve.png",
+            "confusion_matrix*.png",
+        ]
+        for pat in patterns:
+            for f in run_dir.glob(pat):
+                if f.is_file():
+                    f.unlink()
+                    print(f"  removed: {f.name}")
 
     def predict(
         self,
@@ -66,13 +125,12 @@ class ModelAdapter:
             "source": source,
             "conf": conf,
             "save": save,
+            "device": _resolve_device(device),
         }
         if project:
             kwargs["project"] = project
         if name:
             kwargs["name"] = name
-        if device:
-            kwargs["device"] = device
         return self.model.predict(**kwargs)
 
     def validate(self, *, data: str, imgsz: int, batch: int, device: str) -> Any:
@@ -80,7 +138,7 @@ class ModelAdapter:
             data=data,
             imgsz=imgsz,
             batch=batch,
-            device=device,
+            device=_resolve_device(device),
         )
 
     def export(self, *, format_name: str = "onnx", **kwargs) -> Any:

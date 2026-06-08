@@ -30,6 +30,7 @@ def _run_training_impl(job_id: str, celery_task_id: str = ""):
         if celery_task_id:
             patch["celery_task_id"] = celery_task_id
         db["training_jobs"].update(job_id, patch)
+        db["trained_models"].update(job["model_id"], {"status": "running"})
 
         cfg = db["model_configs"].get(job["config_id"])
         ds = db["datasets"].get(job["dataset_id"])
@@ -97,4 +98,5 @@ def _run_training_impl(job_id: str, celery_task_id: str = ""):
                                              "completed_at": datetime.now(timezone.utc).isoformat()})
     except Exception as e:
         db["training_jobs"].update(job_id, {"status": "failed", "error_message": str(e)})
+        db["trained_models"].update(job["model_id"], {"status": "failed"})
         raise

@@ -156,8 +156,8 @@ export default function Workspace() {
     projectData.images(activeProject, imgPage).then(d => { setImgList(d.items); setImgTotal(d.total); });
   }
 
-  async function handleTraining(config: { name: string; model: string; epochs: number; imgsz: number; batch: number; device: string; datasetId?: string }) {
-    const cfg = await trainApi.createConfig(activeProject, { ...config, name: config.name || 'train', base_model: config.model, workers: 4, optimizer: 'auto', lr0: 0.01, lrf: 0.01, momentum: 0.937, weight_decay: 0.0005, warmup_epochs: 3, augment: true, extra_args: {} });
+  async function handleTraining(config: { name: string; model: string; epochs: number; imgsz: number; batch: number; datasetId?: string }) {
+    const cfg = await trainApi.createConfig(activeProject, { ...config, name: config.name || 'train', base_model: config.model, device: '', workers: 4, optimizer: 'auto', lr0: 0.01, lrf: 0.01, momentum: 0.937, weight_decay: 0.0005, warmup_epochs: 3, augment: true, extra_args: {} });
     const job = await trainApi.startJob({ model_config_id: cfg.id, dataset_id: config.datasetId || '', name: config.name || 'train' });
     setRightPanel('models');
     modelApi.list(activeProject).then(d => setModelList(d.items || [])).catch(() => {});
@@ -170,7 +170,10 @@ export default function Workspace() {
   }
 
   if (annotateOpen) {
-    return <AnnotationTool projectId={activeProject} images={imgList} classes={classes} startIndex={annotateIdx} onClose={() => setAnnotateOpen(false)} />;
+    return <AnnotationTool projectId={activeProject} images={imgList} classes={classes} startIndex={annotateIdx}
+      onClose={() => setAnnotateOpen(false)}
+      onAnnotated={(imageId) => setImgList(prev => prev.map(im => im.id === imageId ? { ...im, status: 'annotated' } : im))}
+    />;
   }
   const projectName = projectList.find(p => p.id === activeProject)?.name || '';
   const activeModelObj = activeModels.find(m => m.id === activeModelId);

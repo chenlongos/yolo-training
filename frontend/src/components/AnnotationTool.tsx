@@ -10,9 +10,10 @@ interface Props {
   classes: LabelClass[];
   startIndex: number;
   onClose: () => void;
+  onAnnotated: (imageId: string) => void;
 }
 
-export default function AnnotationTool({ projectId, images: imgList, classes: initialClasses, startIndex, onClose }: Props) {
+export default function AnnotationTool({ projectId, images: imgList, classes: initialClasses, startIndex, onClose, onAnnotated }: Props) {
   const [imgIdx, setImgIdx] = useState(startIndex);
   const [selectedClass, setSelectedClass] = useState(initialClasses[0]?.id || '');
   const [anns, setAnns] = useState<Annotation[]>([]);
@@ -285,7 +286,13 @@ export default function AnnotationTool({ projectId, images: imgList, classes: in
     setZoomLevel(Math.round(ns * 100)); scheduleRender();
   }
 
-  async function save() { if (!imgList[imgIdx]) return; await annApi.save(imgList[imgIdx].id, { annotations: annsRef.current.map(a => ({ class_id: a.class_id, x_center: a.x_center, y_center: a.y_center, width: a.width, height: a.height })) }); setDirty(false); undoStack.current = []; }
+  async function save() {
+    if (!imgList[imgIdx]) return;
+    await annApi.save(imgList[imgIdx].id, { annotations: annsRef.current.map(a => ({ class_id: a.class_id, x_center: a.x_center, y_center: a.y_center, width: a.width, height: a.height })) });
+    setDirty(false);
+    undoStack.current = [];
+    onAnnotated(imgList[imgIdx].id);
+  }
   async function addClass() { await projectData.createClass(projectId, { name: newClassName, color: newClassColor }); setShowNewClass(false); setNewClassName(''); setClasses(await projectData.classes(projectId)); }
 
   useEffect(() => {

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Cpu, X } from 'lucide-react';
 
 interface Props {
-  onStart: (c: { name: string; model: string; epochs: number; imgsz: number; batch: number; device: string; datasetId?: string }) => Promise<any>;
+  onStart: (c: { name: string; model: string; epochs: number; imgsz: number; batch: number; datasetId?: string }) => Promise<any>;
   onClose: () => void;
   training: boolean;
 }
@@ -19,7 +19,6 @@ export default function TrainingPage({ onStart, onClose }: Props) {
   const [epochs, setEpochs] = useState(50);
   const [imgsz, setImgsz] = useState(640);
   const [batch, setBatch] = useState(16);
-  const [device, setDevice] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -54,7 +53,7 @@ export default function TrainingPage({ onStart, onClose }: Props) {
   async function handleStart() {
     setLoading(true); setError('');
     try {
-      const result = await onStart({ name, model, epochs, imgsz, batch, device, datasetId: '' });
+      const result = await onStart({ name, model, epochs, imgsz, batch, datasetId: '' });
       setTotalEpochs(epochs);
       setJobId(result?.id || 'unknown');
       setJobStatus('queued');
@@ -184,12 +183,6 @@ export default function TrainingPage({ onStart, onClose }: Props) {
               <label className={lbl}>批次大小</label>
               <input type="number" value={batch} onChange={e => setBatch(+e.target.value)} className={inp} />
               <p className="text-xs text-gray-400 mt-1">根据显存调整</p>
-            </div>
-            <div>
-              <label className={lbl}>训练设备</label>
-              <select value={device} onChange={e => setDevice(e.target.value)} className={inp}>
-                <option value="">自动</option><option value="cpu">CPU</option><option value="0">GPU 0</option>
-              </select>
             </div>
           </div>
         </section>
