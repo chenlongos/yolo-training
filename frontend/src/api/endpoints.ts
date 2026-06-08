@@ -63,6 +63,18 @@ export const training = {
   cancelJob: (id: string) => api.post(`/training/jobs/${id}/cancel`),
 };
 
+// Project-scoped data operations (auto-resolves dataset internally)
+export const projectData = {
+  upload: (projectId: string, formData: FormData, onProgress?: (pct: number) => void) =>
+    api.upload(`/projects/${projectId}/upload`, formData, onProgress),
+  images: (projectId: string, page = 1) =>
+    api.get(`/projects/${projectId}/images?page=${page}&per_page=56`) as Promise<{ items: Image[]; total: number }>,
+  exportYolo: (projectId: string) => api.post(`/projects/${projectId}/export/yolo`),
+  classes: (projectId: string) => api.get(`/projects/${projectId}/classes`) as Promise<LabelClass[]>,
+  createClass: (projectId: string, data: { name: string; color?: string }) =>
+    api.post(`/projects/${projectId}/classes`, data) as Promise<LabelClass>,
+};
+
 // Models
 export const models = {
   list: (projectId: string) =>

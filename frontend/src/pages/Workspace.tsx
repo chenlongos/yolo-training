@@ -1,14 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { projects, datasets, images as imgApi, training as trainApi, models as modelApi } from '../api/endpoints';
-import type { Project, Dataset, TrainedModel, Image, LabelClass } from '../types';
+import { projects, projectData, images as imgApi, training as trainApi, models as modelApi } from '../api/endpoints';
+import type { Project, TrainedModel, Image, LabelClass } from '../types';
 import Sidebar from '../components/Sidebar';
 import ProjectSidebar, { type RightPanel } from '../components/ProjectSidebar';
 import AnnotationTool from '../components/AnnotationTool';
 import TrainingPage from './TrainingPage';
 import Modal from '../components/Modal';
 import UploadPanel from './UploadPanel';
-import DataPanel from './DataPanel';
 import ImageGrid from './ImageGrid';
 import ModelPanel from './ModelPanel';
 import ModelDetail from './ModelDetail';
@@ -25,10 +24,8 @@ export default function Workspace() {
   const [navTab, setNavTab] = useState<NavItem>('projects');
   const [projectList, setProjectList] = useState<Project[]>([]);
   const [activeProject, setActiveProject] = useState('');
-  const [activeDataset, setActiveDataset] = useState('');
   const [activeModelId, setActiveModelId] = useState('');
   const [rightPanel, setRightPanel] = useState<RightPanel>(null);
-  const [datasetList, setDatasetList] = useState<Dataset[]>([]);
   const [modelList, setModelList] = useState<TrainedModel[]>([]);
   const [imgList, setImgList] = useState<Image[]>([]);
   const [imgPage, setImgPage] = useState(1);
@@ -48,8 +45,6 @@ export default function Workspace() {
   // 弹窗
   const [showNewProject, setShowNewProject] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
-  const [showNewDataset, setShowNewDataset] = useState(false);
-  const [newDatasetName, setNewDatasetName] = useState('');
   const [annotateOpen, setAnnotateOpen] = useState(false);
   const [annotateIdx, setAnnotateIdx] = useState(0);
 
@@ -68,10 +63,6 @@ export default function Workspace() {
       setNavTab('projects');
       setActiveProject(parts[1]);
       if (parts[2] === 'train') { setRightPanel('train'); }
-      else if (parts[2] === 'datasets' && parts[3]) {
-        setActiveDataset(parts[3]);
-        setRightPanel('dataset');
-      }
     }
   }, []);
 
@@ -81,16 +72,12 @@ export default function Workspace() {
     if (navTab === 'projects' && activeProject) {
       parts.push('projects', activeProject);
       if (rightPanel === 'train') { parts.push('train'); }
-      else if (activeDataset) {
-        parts.push('datasets', activeDataset);
-        if (rightPanel === 'upload') parts.push('upload');
-      }
     } else if (navTab === 'models') { parts.push('models'); }
     else if (navTab === 'marketplace') { parts.push('marketplace'); }
     const path = '/' + parts.join('/');
     if (loc.pathname !== path) nav(path, { replace: true });
-  }, [navTab, activeProject, activeDataset, rightPanel]);
-  useEffect(() => { if (!activeProject) return; setActiveDataset(''); setImgList([]); datasets.list(activeProject).then(setDatasetList).catch(() => {}); modelApi.list(activeProject).then(d => setModelList(d.items || [])).catch(() => {}); trainApi.listJobs(activeProject).then(d => setTrainingJobs(d.items || [])).catch(() => {}); }, [activeProject]);
+  }, [navTab, activeProject, rightPanel]);
+  useEffect(() => { if (!activeProject) return; setImgList([]); modelApi.list(activeProject).then(d => setModelList(d.items || [])).catch(() => {}); trainApi.listJobs(activeProject).then(d => setTrainingJobs(d.items || [])).catch(() => {}); }, [activeProject]);
 
   // Load training jobs for models tab without project
   useEffect(() => {
@@ -109,10 +96,9 @@ export default function Workspace() {
     }, 3000);
     return () => clearInterval(timer);
   }, [activeProject, navTab, rightPanel, trainingJobs]);
-  useEffect(() => { if (!activeDataset) return; setImgPage(1); imgApi.get(activeDataset).then(() => {}).catch(() => {}); datasets.images(activeDataset, 1).then(d => { setImgList(d.items); setImgTotal(d.total); }); datasets.classes(activeDataset).then(setClasses); }, [activeDataset]);
-  useEffect(() => { if (!activeDataset || rightPanel !== 'dataset') return; datasets.images(activeDataset, imgPage).then(d => { setImgList(d.items); setImgTotal(d.total); }); }, [imgPage]);
+  useEffect(() => { if (!activeProject) return; setImgPage(1); projectData.images(activeProject, 1).then(d => { setImgList(d.items); setImgTotal(d.total); }); projectData.classes(activeProject).then(setClasses); }, [activeProject]);
+  useEffect(() => { if (!activeProject || rightPanel !== 'dataset') return; projectData.images(activeProject, imgPage).then(d => { setImgList(d.items); setImgTotal(d.total); }); }, [imgPage]);
 
-  const activeDatasets = datasetList.filter(d => d.project_id === activeProject);
   const activeModels = modelList.filter(m => m.project_id === activeProject);
 
   async function handleDeleteModel(id: string, name: string) {
@@ -133,37 +119,58 @@ export default function Workspace() {
   }
 
   async function createProject() { await projects.create({ name: newProjectName }); setShowNewProject(false); setNewProjectName(''); projects.list().then(d => setProjectList(d.items)); }
-  async function createDataset() { if (!activeProject) return; await datasets.create(activeProject, { name: newDatasetName }); setShowNewDataset(false); setNewDatasetName(''); datasets.list(activeProject).then(setDatasetList); }
-  async function doUpload() { if (!activeDataset || uploadFiles.length === 0) return; setUploading(true); const fd = new FormData(); uploadFiles.forEach(f => fd.append('files', f)); try { await datasets.upload(activeDataset, fd, pct => setUploadProgress(pct)); setUploadFiles([]); datasets.list(activeProject).then(setDatasetList); } finally { setUploading(false); setUploadProgress(0); } }
+  async function doUpload() {
+    if (uploadFiles.length === 0) return;
+    setUploading(true);
+    const fd = new FormData();
+    uploadFiles.forEach(f => fd.append('files', f));
+    try {
+      const res = await projectData.upload(activeProject, fd, pct => setUploadProgress(pct));
+      const errs = (res && (res as any).errors) || [];
+      const ok = (res && (res as any).uploaded) || 0;
+      if (errs.length) {
+        const sample = errs.slice(0, 3).map((e: any) => `${e.filename}: ${e.error}`).join('\n');
+        const more = errs.length > 3 ? `\n...还有 ${errs.length - 3} 个错误` : '';
+        alert(`上传完成:成功 ${ok} 个,失败 ${errs.length} 个\n\n${sample}${more}`);
+      }
+      setUploadFiles([]);
+      projectData.images(activeProject, imgPage).then(d => { setImgList(d.items); setImgTotal(d.total); });
+    } catch (e: any) {
+      alert('上传失败: ' + (e?.message || String(e)));
+    } finally {
+      setUploading(false);
+      setUploadProgress(0);
+    }
+  }
 
   async function toggleCamera() {
     if (camActive) { if (streamRef.current) { streamRef.current.getTracks().forEach(t => t.stop()); streamRef.current = null; } if (videoRef.current) videoRef.current.srcObject = null; setCamActive(false); }
     else { setCamActive(true); if (sourceType === 'webcam') { try { const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } }); if (videoRef.current) { videoRef.current.srcObject = stream; streamRef.current = stream; } } catch {} } }
   }
   async function captureFrame() {
-    if (!activeDataset) return; const v = videoRef.current || document.getElementById('capture-video') as HTMLVideoElement; if (!v) return;
+    const v = videoRef.current || document.getElementById('capture-video') as HTMLVideoElement; if (!v) return;
     const c = document.createElement('canvas'); c.width = v.videoWidth; c.height = v.videoHeight; c.getContext('2d')!.drawImage(v, 0, 0);
     const blob = await new Promise<Blob>(r => c.toBlob(b => r(b!), 'image/jpeg', 0.9));
     const fd = new FormData(); fd.append('files', blob, `capture_${Date.now()}.jpg`);
-    await datasets.upload(activeDataset, fd); setCaptureCount(c => c + 1); datasets.list(activeProject).then(setDatasetList);
+    await projectData.upload(activeProject, fd); setCaptureCount(c => c + 1);
+    projectData.images(activeProject, imgPage).then(d => { setImgList(d.items); setImgTotal(d.total); });
   }
 
-  async function handleTraining(config: { name: string; model: string; epochs: number; imgsz: number; batch: number; device: string; datasetId: string }) {
+  async function handleTraining(config: { name: string; model: string; epochs: number; imgsz: number; batch: number; device: string; datasetId?: string }) {
     const cfg = await trainApi.createConfig(activeProject, { ...config, name: config.name || 'train', base_model: config.model, workers: 4, optimizer: 'auto', lr0: 0.01, lrf: 0.01, momentum: 0.937, weight_decay: 0.0005, warmup_epochs: 3, augment: true, extra_args: {} });
-    const job = await trainApi.startJob({ model_config_id: cfg.id, dataset_id: config.datasetId, name: config.name || 'train' });
-    // 自动跳转到模型页面查看训练进度
+    const job = await trainApi.startJob({ model_config_id: cfg.id, dataset_id: config.datasetId || '', name: config.name || 'train' });
     setRightPanel('models');
     modelApi.list(activeProject).then(d => setModelList(d.items || [])).catch(() => {});
     trainApi.listJobs(activeProject).then(d => setTrainingJobs(d.items || [])).catch(() => {});
     return job;
   }
 
-  function openAnnotator(datasetId: string, idx = 0) {
-    setActiveDataset(datasetId); setAnnotateIdx(idx); setAnnotateOpen(true);
+  function openAnnotator(idx = 0) {
+    setAnnotateIdx(idx); setAnnotateOpen(true);
   }
 
   if (annotateOpen) {
-    return <AnnotationTool datasetId={activeDataset} images={imgList} classes={classes} startIndex={annotateIdx} onClose={() => setAnnotateOpen(false)} />;
+    return <AnnotationTool projectId={activeProject} images={imgList} classes={classes} startIndex={annotateIdx} onClose={() => setAnnotateOpen(false)} />;
   }
   const projectName = projectList.find(p => p.id === activeProject)?.name || '';
   const activeModelObj = activeModels.find(m => m.id === activeModelId);
@@ -176,13 +183,11 @@ export default function Workspace() {
         <div className="flex-1 flex overflow-hidden">
           {activeProject && navTab === 'projects' && (
             <ProjectSidebar
-              projectName={projectName} datasets={activeDatasets} models={activeModels}
-              activeDataset={activeDataset} rightPanel={rightPanel}
+              projectName={projectName} models={activeModels}
+              totalImages={imgTotal} rightPanel={rightPanel}
               onBack={() => setActiveProject('')}
               onRightPanel={(p) => { setRightPanel(p); }}
-              onSelectDataset={(id) => { setActiveDataset(id); setRightPanel('dataset'); }}
-              onShowNewDataset={() => setShowNewDataset(true)}
-              onOpenAnnotator={() => { const dsId = activeDataset || activeDatasets[0]?.id; if (dsId) openAnnotator(dsId); }}
+              onOpenAnnotator={() => openAnnotator()}
               onOpenTraining={() => { setRightPanel(rightPanel === 'train' ? 'models' : 'train'); }}
             />
           )}
@@ -192,7 +197,6 @@ export default function Workspace() {
               <>
                 {rightPanel === 'train' && (
                   <TrainingPage
-                    datasets={activeDatasets.map(d => ({ id: d.id, name: d.name, imageCount: d.image_count }))}
                     onStart={handleTraining} onClose={() => setRightPanel('models')} training={false} />
                 )}
                 {rightPanel === 'upload' && <UploadPanel
@@ -202,19 +206,23 @@ export default function Workspace() {
                   onFileSelect={files => setUploadFiles(prev => [...prev, ...files].slice(0, 500))}
                   onUpload={doUpload} onClearFiles={() => setUploadFiles([])}
                 />}
-                {rightPanel === 'data' && <DataPanel datasets={activeDatasets} onSelect={id => { setActiveDataset(id); setRightPanel('dataset'); }} onNewDataset={() => setShowNewDataset(true)} />}
-                {rightPanel === 'dataset' && activeDataset && (() => { const ds = activeDatasets.find(d => d.id === activeDataset); if (!ds) return <div className="w-full flex-1 flex items-center justify-center text-gray-400 text-sm">数据集未找到</div>; return (
-                  <ImageGrid dataset={ds} images={imgList} classes={classes}
+                {rightPanel === 'data' && (
+                  <div className="w-full flex-1 flex items-center justify-center text-gray-400 text-sm" onClick={() => setRightPanel('dataset')} style={{ cursor: 'pointer' }}>
+                    点击查看图片数据
+                  </div>
+                )}
+                {rightPanel === 'dataset' && (
+                  <ImageGrid projectId={activeProject} projectName={projectName} images={imgList} classes={classes}
                     page={imgPage} total={imgTotal} onPage={setImgPage} onSearch={() => {}}
-                    onAnnotate={id => openAnnotator(id)} onTrain={() => { setRightPanel('train'); }}
-                    onImageClick={idx => openAnnotator(activeDataset, idx)}
+                    onAnnotate={() => openAnnotator()} onTrain={() => { setRightPanel('train'); }}
+                    onImageClick={idx => openAnnotator(idx)}
                     onDeleteImages={async (ids) => {
                       for (const id of ids) {
                         await fetch(`/api/v1/images/${id}`, { method: 'DELETE' });
                       }
-                      if (activeDataset) datasets.images(activeDataset, imgPage).then(d => { setImgList(d.items); setImgTotal(d.total); });
+                      projectData.images(activeProject, imgPage).then(d => { setImgList(d.items); setImgTotal(d.total); });
                     }} />
-                ); })()}
+                )}
                 {rightPanel === 'models' && <ModelPanel models={activeModels} jobs={trainingJobs} onSelect={id => { setActiveModelId(id); setRightPanel('modelDetail'); }} onDelete={handleDeleteModel} onCancelJob={handleCancelJob} />}
                 {rightPanel === 'modelDetail' && activeModelObj && <ModelDetail model={activeModelObj} onDelete={handleDeleteModel} onInference={(id) => { setActiveModelId(id); setRightPanel('inference'); }} onRefresh={() => { modelApi.list(activeProject).then(d => setModelList(d.items || [])).catch(() => {}); }} />}
                 {rightPanel === 'inference' && <InferencePanel models={activeModels} activeModelId={activeModelId} />}
@@ -232,7 +240,6 @@ export default function Workspace() {
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                     {projectList.map(p => {
-                      const dsCount = datasetList.filter(d => d.project_id === p.id).length;
                       const mCount = modelList.filter(m => m.project_id === p.id).length;
                       const daysAgo = Math.floor((Date.now() - new Date(p.created_at).getTime()) / 86400000);
                       return (
@@ -245,7 +252,7 @@ export default function Workspace() {
                             <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded">Object Detection</span>
                             <h3 className="font-semibold text-gray-900 text-sm mt-1.5">{p.name}</h3>
                             <p className="text-xs text-gray-500 mt-1">{daysAgo === 0 ? '今天' : `${daysAgo} 天前`} 编辑</p>
-                            <p className="text-xs text-gray-500 mt-0.5">{dsCount} Datasets · {mCount} Models</p>
+                            <p className="text-xs text-gray-500 mt-0.5">{mCount} Models</p>
                           </div>
                         </div>
                       );
@@ -299,9 +306,6 @@ export default function Workspace() {
 
       {showNewProject && <Modal title="新建项目" onClose={() => setShowNewProject(false)} onConfirm={createProject}>
         <input value={newProjectName} onChange={e => setNewProjectName(e.target.value)} placeholder="项目名称" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500" />
-      </Modal>}
-      {showNewDataset && <Modal title="新建数据集" onClose={() => setShowNewDataset(false)} onConfirm={createDataset}>
-        <input value={newDatasetName} onChange={e => setNewDatasetName(e.target.value)} placeholder="数据集名称" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500" />
       </Modal>}
     </div>
   );

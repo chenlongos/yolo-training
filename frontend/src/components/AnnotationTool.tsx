@@ -1,18 +1,18 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { ArrowLeft, HelpCircle, Check, Pencil, Layers, Trash2, Undo2, ZoomIn, ZoomOut, Maximize, Eye, EyeOff } from 'lucide-react';
-import { images, annotations as annApi, datasets } from '../api/endpoints';
+import { images, annotations as annApi, projectData } from '../api/endpoints';
 import type { Image, Annotation, LabelClass } from '../types';
 import Modal from './Modal';
 
 interface Props {
-  datasetId: string;
+  projectId: string;
   images: Image[];
   classes: LabelClass[];
   startIndex: number;
   onClose: () => void;
 }
 
-export default function AnnotationTool({ datasetId, images: imgList, classes: initialClasses, startIndex, onClose }: Props) {
+export default function AnnotationTool({ projectId, images: imgList, classes: initialClasses, startIndex, onClose }: Props) {
   const [imgIdx, setImgIdx] = useState(startIndex);
   const [selectedClass, setSelectedClass] = useState(initialClasses[0]?.id || '');
   const [anns, setAnns] = useState<Annotation[]>([]);
@@ -35,9 +35,29 @@ export default function AnnotationTool({ datasetId, images: imgList, classes: in
   const undoStack = useRef<Annotation[][]>([]);
   const renderRAF = useRef(0);
 
+  // Refs for render — avoids stale closures, mouse handlers read latest data directly
+  const annsRef = useRef<Annotation[]>([]);
+  const clsRef = useRef<LabelClass[]>(initialClasses);
+  const showLabelsRef = useRef(true);
+  const toolRef = useRef<'draw' | 'select'>('draw');
+  const selectedIdRef = useRef<string | null>(null);
+
+  // Keep refs in sync with state (for non-mouse paths like undo/delete)
+  useEffect(() => { annsRef.current = anns; }, [anns]);
+  useEffect(() => { clsRef.current = cls; }, [cls]);
+  useEffect(() => { showLabelsRef.current = showLabels; }, [showLabels]);
+  useEffect(() => { toolRef.current = tool; }, [tool]);
+  useEffect(() => { selectedIdRef.current = selectedId; }, [selectedId]);
+
   const loadImage = useCallback(async () => {
     const img = imgList[imgIdx]; if (!img) return;
-    try { const d = await images.get(img.id); setAnns(d.annotations); setDirty(false); undoStack.current = []; } catch {}
+    try {
+      const d = await images.get(img.id);
+      setAnns(d.annotations);
+      annsRef.current = d.annotations;
+      setDirty(false);
+      undoStack.current = [];
+    } catch {}
     const el = new window.Image(); el.crossOrigin = 'anonymous';
     el.onload = () => {
       curImg.current = el;
@@ -46,7 +66,7 @@ export default function AnnotationTool({ datasetId, images: imgList, classes: in
       const s = Math.min((cv.width - 40) / el.naturalWidth, (cv.height - 40) / el.naturalHeight, 1);
       transform.current = { scale: s, offsetX: (cv.width - el.naturalWidth * s) / 2, offsetY: (cv.height - el.naturalHeight * s) / 2 };
       setZoomLevel(Math.round(s * 100));
-      render();
+      scheduleRender();
     };
     el.src = img.image_url || `/api/v1/images/${img.id}/file`;
   }, [imgIdx]);
@@ -56,59 +76,80 @@ export default function AnnotationTool({ datasetId, images: imgList, classes: in
   function ci(cx: number, cy: number) { return { x: (cx - transform.current.offsetX) / transform.current.scale, y: (cy - transform.current.offsetY) / transform.current.scale }; }
   function gp(e: React.MouseEvent) { const r = canvasRef.current!.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; }
 
-  const render = useCallback(() => {
-    const c = canvasRef.current; if (!c) return; const ctx = c.getContext('2d')!;
-    ctx.fillStyle = '#f8fafc'; ctx.fillRect(0, 0, c.width, c.height);
-    const img = curImg.current; if (!img) return;
-    const { scale, offsetX, offsetY } = transform.current;
-    ctx.save(); ctx.translate(offsetX, offsetY); ctx.scale(scale, scale); ctx.drawImage(img, 0, 0);
-    if (showLabels) {
-      for (const a of anns) {
-        const cl = cls.find(x => x.id === a.class_id); const color = cl?.color || '#7c3aed';
-        const x = (a.x_center - a.width / 2) * img.naturalWidth, y = (a.y_center - a.height / 2) * img.naturalHeight;
-        const w = a.width * img.naturalWidth, h = a.height * img.naturalHeight;
-        const sel = a.id === selectedId;
-        ctx.strokeStyle = sel ? '#1e293b' : color; ctx.lineWidth = sel ? 3 / scale : 2 / scale;
-        ctx.strokeRect(x, y, w, h); ctx.fillStyle = color + '18'; ctx.fillRect(x, y, w, h);
-        const lbl = cl?.name || '?'; const fs = Math.max(11, 13 / scale);
-        ctx.font = `500 ${fs}px system-ui`; const tw = ctx.measureText(lbl).width;
-        ctx.fillStyle = color; ctx.fillRect(x, y - fs - 3, tw + 6, fs + 3); ctx.fillStyle = '#fff'; ctx.fillText(lbl, x + 3, y - 4);
-        // Corner resize handles
-        if (sel) {
-          const hs = 7 / scale;
-          const corners = [{ cx: x, cy: y }, { cx: x + w, cy: y }, { cx: x, cy: y + h }, { cx: x + w, cy: y + h }];
-          for (const cr of corners) {
-            ctx.fillStyle = '#fff'; ctx.fillRect(cr.cx - hs / 2, cr.cy - hs / 2, hs, hs);
-            ctx.strokeStyle = '#1e293b'; ctx.lineWidth = 1.5 / scale; ctx.strokeRect(cr.cx - hs / 2, cr.cy - hs / 2, hs, hs);
+  // Schedule a render via rAF — throttled, always reads latest data from refs
+  function scheduleRender() {
+    if (renderRAF.current) return; // already scheduled
+    renderRAF.current = requestAnimationFrame(() => {
+      renderRAF.current = 0;
+      const c = canvasRef.current; if (!c) return;
+      const ctx = c.getContext('2d')!;
+      ctx.fillStyle = '#f8fafc'; ctx.fillRect(0, 0, c.width, c.height);
+      const img = curImg.current; if (!img) return;
+      const { scale, offsetX, offsetY } = transform.current;
+      ctx.save(); ctx.translate(offsetX, offsetY); ctx.scale(scale, scale); ctx.drawImage(img, 0, 0);
+
+      const anns = annsRef.current;
+      const cls = clsRef.current;
+      const selectedId = selectedIdRef.current;
+      const tool = toolRef.current;
+
+      if (showLabelsRef.current) {
+        for (const a of anns) {
+          const cl = cls.find(x => x.id === a.class_id); const color = cl?.color || '#7c3aed';
+          const x = (a.x_center - a.width / 2) * img.naturalWidth, y = (a.y_center - a.height / 2) * img.naturalHeight;
+          const w = a.width * img.naturalWidth, h = a.height * img.naturalHeight;
+          const sel = a.id === selectedIdRef.current;
+          ctx.strokeStyle = sel ? '#1e293b' : color; ctx.lineWidth = sel ? 3 / scale : 2 / scale;
+          ctx.strokeRect(x, y, w, h); ctx.fillStyle = color + '18'; ctx.fillRect(x, y, w, h);
+          const lbl = cl?.name || '?'; const fs = Math.max(11, 13 / scale);
+          ctx.font = `500 ${fs}px system-ui`; const tw = ctx.measureText(lbl).width;
+          ctx.fillStyle = color; ctx.fillRect(x, y - fs - 3, tw + 6, fs + 3); ctx.fillStyle = '#fff'; ctx.fillText(lbl, x + 3, y - 4);
+          if (sel) {
+            const hs = 7 / scale;
+            const corners = [{ cx: x, cy: y }, { cx: x + w, cy: y }, { cx: x, cy: y + h }, { cx: x + w, cy: y + h }];
+            for (const cr of corners) {
+              ctx.fillStyle = '#fff'; ctx.fillRect(cr.cx - hs / 2, cr.cy - hs / 2, hs, hs);
+              ctx.strokeStyle = '#1e293b'; ctx.lineWidth = 1.5 / scale; ctx.strokeRect(cr.cx - hs / 2, cr.cy - hs / 2, hs, hs);
+            }
           }
         }
       }
-    }
-    if (drawing.current) {
-      const { x1, y1, x2, y2 } = drawing.current;
-      ctx.strokeStyle = '#7c3aed'; ctx.lineWidth = 2 / scale; ctx.setLineDash([5 / scale, 3 / scale]);
-      ctx.strokeRect(Math.min(x1, x2), Math.min(y1, y2), Math.abs(x2 - x1), Math.abs(y2 - y1)); ctx.setLineDash([]);
-    }
-    ctx.restore();
+      if (drawing.current) {
+        const { x1, y1, x2, y2 } = drawing.current;
+        ctx.strokeStyle = '#7c3aed'; ctx.lineWidth = 2 / scale; ctx.setLineDash([5 / scale, 3 / scale]);
+        ctx.strokeRect(Math.min(x1, x2), Math.min(y1, y2), Math.abs(x2 - x1), Math.abs(y2 - y1)); ctx.setLineDash([]);
+      }
+      ctx.restore();
 
-    const ch = crosshairRef.current;
-    if (tool === 'draw' && ch && !drawing.current) {
-      const cx = ch.x * scale + offsetX, cy = ch.y * scale + offsetY;
-      ctx.strokeStyle = '#7c3aed'; ctx.lineWidth = 1.5; ctx.setLineDash([6, 4]);
-      ctx.beginPath(); ctx.moveTo(cx, 0); ctx.lineTo(cx, c.height); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(0, cy); ctx.lineTo(c.width, cy); ctx.stroke();
-      ctx.setLineDash([]);
-    }
-  }, [anns, cls, showLabels, tool]);
+      const ch = crosshairRef.current;
+      if (tool === 'draw' && ch && !drawing.current) {
+        const cx = ch.x * scale + offsetX, cy = ch.y * scale + offsetY;
+        ctx.strokeStyle = '#7c3aed'; ctx.lineWidth = 1.5; ctx.setLineDash([6, 4]);
+        ctx.beginPath(); ctx.moveTo(cx, 0); ctx.lineTo(cx, c.height); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(0, cy); ctx.lineTo(c.width, cy); ctx.stroke();
+        ctx.setLineDash([]);
+      }
+    });
+  }
 
-  useEffect(() => { render(); }, [render]);
+  // Fallback: render when state changes (undo, delete, class change, etc.)
+  useEffect(() => { scheduleRender(); }, [anns, cls, showLabels, tool, selectedId]);
 
-  function pushUndo() { undoStack.current.push(JSON.parse(JSON.stringify(anns))); if (undoStack.current.length > 50) undoStack.current.shift(); }
-  function undo() { if (undoStack.current.length === 0) return; setAnns(undoStack.current.pop()!); setDirty(true); }
+  function pushUndo() { undoStack.current.push(JSON.parse(JSON.stringify(annsRef.current))); if (undoStack.current.length > 50) undoStack.current.shift(); }
+  function undo() {
+    if (undoStack.current.length === 0) return;
+    const prev = undoStack.current.pop()!;
+    annsRef.current = prev;
+    setAnns(prev);
+    setDirty(true);
+  }
   function del() {
     if (!selectedId) return;
     pushUndo();
-    setAnns(p => p.filter(a => a.id !== selectedId));
+    const filtered = annsRef.current.filter(a => a.id !== selectedId);
+    annsRef.current = filtered;
+    setAnns(filtered);
+    selectedIdRef.current = null;
     setSelectedId(null);
     setDirty(true);
   }
@@ -118,7 +159,7 @@ export default function AnnotationTool({ datasetId, images: imgList, classes: in
     if (tool === 'draw') { if (!selectedClass) return; pushUndo(); drawing.current = { x1: ip.x, y1: ip.y, x2: ip.x, y2: ip.y }; }
     else if (img) {
       // Check corner handles of selected box first
-      const selAnn = anns.find(a => a.id === selectedId);
+      const selAnn = annsRef.current.find(a => a.id === selectedIdRef.current);
       if (selAnn) {
         const sx = (selAnn.x_center - selAnn.width / 2) * img.naturalWidth, sy = (selAnn.y_center - selAnn.height / 2) * img.naturalHeight;
         const sw = selAnn.width * img.naturalWidth, sh = selAnn.height * img.naturalHeight;
@@ -133,29 +174,31 @@ export default function AnnotationTool({ datasetId, images: imgList, classes: in
           if (Math.abs(ip.x - cr.cx) < hs && Math.abs(ip.y - cr.cy) < hs) {
             pushUndo();
             dragRef.current = { origCx: selAnn.x_center, origCy: selAnn.y_center, origW: selAnn.width, origH: selAnn.height, sx: ip.x, sy: ip.y, corner: key };
-            render(); return;
+            scheduleRender(); return;
           }
         }
       }
       // Check if clicking on any annotation
+      selectedIdRef.current = null;
       setSelectedId(null);
-      for (const a of anns) {
+      for (const a of annsRef.current) {
         const x = (a.x_center - a.width / 2) * img.naturalWidth, y = (a.y_center - a.height / 2) * img.naturalHeight;
         const w = a.width * img.naturalWidth, h = a.height * img.naturalHeight;
         if (ip.x >= x && ip.x <= x + w && ip.y >= y && ip.y <= y + h) {
+          selectedIdRef.current = a.id;
           setSelectedId(a.id);
           dragRef.current = { origCx: a.x_center, origCy: a.y_center, origW: a.width, origH: a.height, sx: ip.x, sy: ip.y };
           break;
         }
       }
     }
-    render();
+    scheduleRender();
   }
 
   function onMove(e: React.MouseEvent) {
     const ip = ci(gp(e).x, gp(e).y); const img = curImg.current;
-    if (drawing.current) { drawing.current.x2 = ip.x; drawing.current.y2 = ip.y; render(); }
-    else if (dragRef.current && selectedId && img) {
+    if (drawing.current) { drawing.current.x2 = ip.x; drawing.current.y2 = ip.y; scheduleRender(); }
+    else if (dragRef.current && selectedIdRef.current && img) {
       const d = dragRef.current;
       if (d.corner) {
         // Resize — corner drag
@@ -169,19 +212,25 @@ export default function AnnotationTool({ datasetId, images: imgList, classes: in
           case 'bl': ncx = clamp(origCx + dx / 2); ncy = clamp(origCy + dy / 2); nw = clamp(origW - dx); nh = clamp(origH + dy); break;
           case 'br': ncx = clamp(origCx + dx / 2); ncy = clamp(origCy + dy / 2); nw = clamp(origW + dx); nh = clamp(origH + dy); break;
         }
-        setAnns(prev => prev.map(a => a.id === selectedId ? { ...a, x_center: ncx, y_center: ncy, width: nw, height: nh } : a));
+        // Update ref immediately for instant canvas repaint
+        const updated = annsRef.current.map(a => a.id === selectedIdRef.current ? { ...a, x_center: ncx, y_center: ncy, width: nw, height: nh } : a);
+        annsRef.current = updated;
+        setAnns(updated);
       } else {
         // Move
         const dx = ip.x - d.sx, dy = ip.y - d.sy;
-        setAnns(prev => prev.map(a => a.id === selectedId
+        const updated = annsRef.current.map(a => a.id === selectedIdRef.current
           ? { ...a, x_center: Math.max(0, Math.min(1, d.origCx + dx / img.naturalWidth)), y_center: Math.max(0, Math.min(1, d.origCy + dy / img.naturalHeight)) }
-          : a));
+          : a);
+        annsRef.current = updated;
+        setAnns(updated);
       }
       setDirty(true);
-    } else if (tool === 'draw') { crosshairRef.current = ip; render(); }
-    else if (tool === 'select' && img && selectedId) {
+      scheduleRender();
+    } else if (tool === 'draw') { crosshairRef.current = ip; scheduleRender(); }
+    else if (tool === 'select' && img && selectedIdRef.current) {
       // Update cursor for resize handles
-      const sel = anns.find(a => a.id === selectedId);
+      const sel = annsRef.current.find(a => a.id === selectedIdRef.current);
       if (sel) {
         const sx = (sel.x_center - sel.width / 2) * img.naturalWidth, sy = (sel.y_center - sel.height / 2) * img.naturalHeight;
         const sw = sel.width * img.naturalWidth, sh = sel.height * img.naturalHeight;
@@ -193,27 +242,31 @@ export default function AnnotationTool({ datasetId, images: imgList, classes: in
     }
   }
 
-  function onLeave() { crosshairRef.current = null; const cv = canvasRef.current; if (cv) cv.style.cursor = tool === 'draw' ? 'crosshair' : 'default'; render(); }
+  function onLeave() { crosshairRef.current = null; const cv = canvasRef.current; if (cv) cv.style.cursor = tool === 'draw' ? 'crosshair' : 'default'; scheduleRender(); }
   function onUp() {
     const img = curImg.current;
-    if (dragRef.current?.corner) { dragRef.current = null; render(); return; }
+    if (dragRef.current?.corner) { dragRef.current = null; scheduleRender(); return; }
     if (drawing.current && img) {
       const { x1, y1, x2, y2 } = drawing.current;
       const x = Math.min(x1, x2), y = Math.min(y1, y2), w = Math.abs(x2 - x1), h = Math.abs(y2 - y1);
       drawing.current = null;
       if (w >= 5 && h >= 5 && selectedClass) {
         const newId = 'tmp_' + Date.now();
-        setAnns(prev => [...prev, {
+        const newAnn: Annotation = {
           id: newId, image_id: imgList[imgIdx]?.id || '', class_id: selectedClass,
           class_name: cls.find(c => c.id === selectedClass)?.name || '',
           x_center: (x + w / 2) / img.naturalWidth, y_center: (y + h / 2) / img.naturalHeight,
           width: w / img.naturalWidth, height: h / img.naturalHeight,
-        }]);
+        };
+        // Update ref immediately so scheduleRender shows the new box instantly
+        annsRef.current = [...annsRef.current, newAnn];
+        setAnns(prev => [...prev, newAnn]);
+        selectedIdRef.current = newId;
         setSelectedId(newId);
         setDirty(true);
       }
     }
-    dragRef.current = null; render();
+    dragRef.current = null; scheduleRender();
   }
 
   function onWheel(e: React.WheelEvent) {
@@ -221,7 +274,7 @@ export default function AnnotationTool({ datasetId, images: imgList, classes: in
     const p = gp(e as any), ip = ci(p.x, p.y);
     const ns = Math.min(5, Math.max(0.1, transform.current.scale * (e.deltaY < 0 ? 1.15 : 0.85)));
     transform.current = { scale: ns, offsetX: p.x - ip.x * ns, offsetY: p.y - ip.y * ns };
-    setZoomLevel(Math.round(ns * 100)); render();
+    setZoomLevel(Math.round(ns * 100)); scheduleRender();
   }
 
   function zoom(ns: number) {
@@ -229,14 +282,14 @@ export default function AnnotationTool({ datasetId, images: imgList, classes: in
     const cx = c.width / 2, cy = c.height / 2;
     const ip = ci(cx, cy);
     transform.current = { scale: ns, offsetX: cx - ip.x * ns, offsetY: cy - ip.y * ns };
-    setZoomLevel(Math.round(ns * 100)); render();
+    setZoomLevel(Math.round(ns * 100)); scheduleRender();
   }
 
-  async function save() { if (!imgList[imgIdx]) return; await annApi.save(imgList[imgIdx].id, { annotations: anns.map(a => ({ class_id: a.class_id, x_center: a.x_center, y_center: a.y_center, width: a.width, height: a.height })) }); setDirty(false); undoStack.current = []; }
-  async function addClass() { await datasets.createClass(datasetId, { name: newClassName, color: newClassColor }); setShowNewClass(false); setNewClassName(''); setClasses(await datasets.classes(datasetId)); }
+  async function save() { if (!imgList[imgIdx]) return; await annApi.save(imgList[imgIdx].id, { annotations: annsRef.current.map(a => ({ class_id: a.class_id, x_center: a.x_center, y_center: a.y_center, width: a.width, height: a.height })) }); setDirty(false); undoStack.current = []; }
+  async function addClass() { await projectData.createClass(projectId, { name: newClassName, color: newClassColor }); setShowNewClass(false); setNewClassName(''); setClasses(await projectData.classes(projectId)); }
 
   useEffect(() => {
-    function onKey(e: KeyboardEvent) { if (e.target instanceof HTMLInputElement) return; const k = e.key.toLowerCase(); if (k === 'd') setTool('draw'); if (k === 's') setTool('select'); if (k === 'delete' || k === 'backspace') { e.preventDefault(); del(); } if ((e.ctrlKey || e.metaKey) && k === 's') { e.preventDefault(); save(); } if ((e.ctrlKey || e.metaKey) && k === 'z') { e.preventDefault(); undo(); } if (k === '[') setImgIdx(i => Math.max(0, i - 1)); if (k === ']') setImgIdx(i => Math.min(imgList.length - 1, i + 1)); if (k === 'escape') { setSelectedId(null); render(); } }
+    function onKey(e: KeyboardEvent) { if (e.target instanceof HTMLInputElement) return; const k = e.key.toLowerCase(); if (k === 'd') setTool('draw'); if (k === 's') setTool('select'); if (k === 'delete' || k === 'backspace') { e.preventDefault(); del(); } if ((e.ctrlKey || e.metaKey) && k === 's') { e.preventDefault(); save(); } if ((e.ctrlKey || e.metaKey) && k === 'z') { e.preventDefault(); undo(); } if (k === '[') setImgIdx(i => Math.max(0, i - 1)); if (k === ']') setImgIdx(i => Math.min(imgList.length - 1, i + 1)); if (k === 'escape') { selectedIdRef.current = null; setSelectedId(null); scheduleRender(); } }
     window.addEventListener('keydown', onKey); return () => window.removeEventListener('keydown', onKey);
   }, [anns, imgList.length, selectedClass]);
 
@@ -285,7 +338,7 @@ export default function AnnotationTool({ datasetId, images: imgList, classes: in
             <button onClick={() => zoom(Math.max(0.1, transform.current.scale * 0.7))} className="p-1.5 hover:bg-gray-100 rounded"><ZoomOut className="w-4 h-4 text-gray-600" /></button>
             <span className="text-xs text-gray-500 px-1 font-mono w-10 text-center">{zoomLevel}%</span>
             <button onClick={() => zoom(Math.min(5, transform.current.scale * 1.3))} className="p-1.5 hover:bg-gray-100 rounded"><ZoomIn className="w-4 h-4 text-gray-600" /></button>
-            <button onClick={() => { const c = canvasRef.current; if (!c || !curImg.current) return; const img = curImg.current; const s = Math.min((c.width - 40) / img.naturalWidth, (c.height - 40) / img.naturalHeight, 1); transform.current = { scale: s, offsetX: (c.width - img.naturalWidth * s) / 2, offsetY: (c.height - img.naturalHeight * s) / 2 }; setZoomLevel(Math.round(s * 100)); render(); }} className="p-1.5 hover:bg-gray-100 rounded"><Maximize className="w-4 h-4 text-gray-600" /></button>
+            <button onClick={() => { const c = canvasRef.current; if (!c || !curImg.current) return; const img = curImg.current; const s = Math.min((c.width - 40) / img.naturalWidth, (c.height - 40) / img.naturalHeight, 1); transform.current = { scale: s, offsetX: (c.width - img.naturalWidth * s) / 2, offsetY: (c.height - img.naturalHeight * s) / 2 }; setZoomLevel(Math.round(s * 100)); scheduleRender(); }} className="p-1.5 hover:bg-gray-100 rounded"><Maximize className="w-4 h-4 text-gray-600" /></button>
           </div>
         </div>
 

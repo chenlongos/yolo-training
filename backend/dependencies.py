@@ -6,6 +6,20 @@ from jose import JWTError
 from backend.store import db
 from backend.services.auth_service import decode_token
 
+
+def resolve_project_dataset(project_id: str) -> dict:
+    """Resolve the (single) dataset for a project. Auto-creates one if none exists."""
+    dss = db["datasets"].filter(lambda d: d["project_id"] == project_id)
+    if not dss:
+        from backend.services.dataset_service import get_or_create_default_class
+        ds = db["datasets"].create({
+            "project_id": project_id, "name": "default",
+            "description": "", "current_version": 1, "image_count": 0,
+        })
+        get_or_create_default_class(ds["id"])
+        return db["datasets"].get(ds["id"])
+    return dss[0]
+
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
 
 

@@ -1,5 +1,5 @@
 import { UploadCloud, Edit3, Database, Tag, Cpu, Box, Rocket, ChevronDown, Plus, MoreHorizontal, Layout, Crosshair } from 'lucide-react';
-import type { Dataset, TrainedModel } from '../types';
+import type { TrainedModel } from '../types';
 
 export type RightPanel = 'upload' | 'data' | 'dataset' | 'models' | 'modelDetail' | 'inference' | 'deploy' | 'train' | null;
 
@@ -18,13 +18,10 @@ interface NavSectionData {
 
 interface Props {
   projectName: string;
-  datasets: Dataset[];
   models: TrainedModel[];
-  activeDataset: string;
+  totalImages: number;
   rightPanel: RightPanel;
   onRightPanel: (p: RightPanel) => void;
-  onSelectDataset: (id: string) => void;
-  onShowNewDataset: () => void;
   onOpenAnnotator: () => void;
   onOpenTraining: () => void;
   onBack: () => void;
@@ -42,8 +39,7 @@ const NavItem = ({ label, icon: Icon, badge, active, onClick }: NavItemData) => 
 );
 
 export default function ProjectSidebar(props: Props) {
-  const { datasets, models, activeDataset, rightPanel } = props;
-  const totalImages = datasets.reduce((s, d) => s + d.image_count, 0);
+  const { models, totalImages, rightPanel } = props;
 
   const sections: NavSectionData[] = [
     {
@@ -51,9 +47,9 @@ export default function ProjectSidebar(props: Props) {
       items: [
         { label: '上传数据', icon: UploadCloud, active: rightPanel === 'upload', onClick: () => props.onRightPanel('upload') },
         { label: '标注', icon: Edit3, onClick: () => props.onOpenAnnotator() },
-        { label: '数据集', icon: Database, badge: totalImages, active: rightPanel === 'data' || rightPanel === 'dataset',
-          onClick: () => { if (datasets.length === 1) { props.onSelectDataset(datasets[0].id); props.onRightPanel('dataset'); } else { props.onRightPanel('data'); } } },
-        { label: '类别管理', icon: Tag, onClick: () => props.onShowNewDataset() },
+        { label: '图片数据', icon: Database, badge: totalImages, active: rightPanel === 'data' || rightPanel === 'dataset',
+          onClick: () => props.onRightPanel('dataset') },
+        { label: '类别管理', icon: Tag, onClick: () => props.onRightPanel('classes') },
       ],
     },
     {
@@ -76,7 +72,6 @@ export default function ProjectSidebar(props: Props) {
 
   return (
     <nav className="w-44 bg-gray-50/60 border-r border-gray-200 flex flex-col shrink-0 h-full py-2 gap-3">
-      {/* 顶部：工作区 + 项目预览 */}
       <button onClick={props.onBack}
         className="flex w-full items-center gap-2 px-3 py-2 text-[11px] font-semibold uppercase text-gray-500 transition-all rounded hover:bg-gray-200/50 hover:text-gray-900">
         <Plus size={14} className="shrink-0" />
@@ -114,20 +109,6 @@ export default function ProjectSidebar(props: Props) {
           </div>
         </div>
       ))}
-
-      {/* 数据集子列表 */}
-      {datasets.length > 0 && rightPanel === 'dataset' && (
-        <div className="flex flex-col gap-1 px-2">
-          {datasets.map(d => (
-            <button key={d.id} onClick={() => { props.onSelectDataset(d.id); props.onRightPanel('dataset'); }}
-              className={`flex h-8 w-full items-center gap-2 rounded border px-3 text-xs transition-all cursor-pointer ${activeDataset === d.id ? 'bg-violet-50 text-violet-600 border-violet-200' : 'bg-transparent text-gray-500 border-transparent hover:bg-gray-100'}`}>
-              <Database size={14} />
-              <span className="truncate whitespace-nowrap">{d.name}</span>
-              <span className="ml-auto text-[10px] text-gray-400">{d.image_count}</span>
-            </button>
-          ))}
-        </div>
-      )}
     </nav>
   );
 }

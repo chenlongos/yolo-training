@@ -2,7 +2,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from backend.store import db
 from backend.schemas.training import ModelConfigCreate, TrainingJobCreate
-from backend.dependencies import get_current_user
+from backend.dependencies import get_current_user, resolve_project_dataset
 from backend.services.training_service import create_training_job
 
 router = APIRouter(prefix="/api/v1", tags=["training"])
@@ -35,7 +35,9 @@ def start_training(data: TrainingJobCreate, user: dict = Depends(get_current_use
     cfg = db["model_configs"].get(data.model_config_id)
     if not cfg: raise HTTPException(404, detail="Config not found")
     _own_project(cfg["project_id"], user)
-    return create_training_job(user["id"], data.model_config_id, data.dataset_id, data.name, cfg["project_id"])
+    # Auto-resolve dataset_id from project if not provided
+    dataset_id = data.dataset_id or resolve_project_dataset(cfg["project_id"])["id"]
+    return create_training_job(user["id"], data.model_config_id, dataset_id, data.name, cfg["project_id"])
 
 @router.get("/training/jobs")
 def list_jobs(project_id: str = Query(""), status_filter: str = Query("", alias="status"), user: dict = Depends(get_current_user)):

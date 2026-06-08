@@ -46,7 +46,7 @@ class ModelConfigResponse(BaseModel):
 
 class TrainingJobCreate(BaseModel):
     model_config_id: str
-    dataset_id: str
+    dataset_id: str = ""  # Optional — auto-resolved from project if empty
     name: str = Field(..., min_length=1, max_length=255)
 
 

@@ -2,7 +2,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from backend.store import db
 from backend.schemas.project import ProjectCreate, ProjectUpdate
-from backend.dependencies import get_current_user
+from backend.dependencies import get_current_user, resolve_project_dataset
 
 router = APIRouter(prefix="/api/v1/projects", tags=["projects"])
 
@@ -18,7 +18,10 @@ def list_projects(page: int = Query(1, ge=1), per_page: int = Query(20, ge=1, le
 
 @router.post("", status_code=201)
 def create_project(data: ProjectCreate, user: dict = Depends(get_current_user)):
-    return db["projects"].create({"user_id": user["id"], "name": data.name, "description": data.description})
+    project = db["projects"].create({"user_id": user["id"], "name": data.name, "description": data.description})
+    # Auto-create default dataset for the project
+    resolve_project_dataset(project["id"])
+    return project
 
 @router.get("/{project_id}")
 def get_project(project_id: str, user: dict = Depends(get_current_user)):

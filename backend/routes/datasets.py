@@ -4,12 +4,18 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile
 from fastapi.responses import FileResponse
 from backend.store import db
 from backend.schemas.dataset import DatasetCreate, AnnotationBulkUpdate, AnnotationCreate, LabelClassCreate
-from backend.dependencies import get_current_user
+from backend.dependencies import get_current_user, resolve_project_dataset
 from backend.services.dataset_service import upload_images, get_or_create_default_class
 from backend.services.yolo_export_service import generate_yolo_dataset
 from backend.services.storage_service import storage_service
 
 router = APIRouter(prefix="/api/v1", tags=["datasets"])
+
+def _own_project(pid: str, user: dict) -> dict:
+    p = db["projects"].get(pid)
+    if not p or str(p.get("user_id")) != str(user.get("id")):
+        raise HTTPException(404, detail="Project not found")
+    return p
 
 def _own_ds(did: str, user: dict) -> dict:
     ds = db["datasets"].get(did)
@@ -166,3 +172,60 @@ def export_yolo(dataset_id: str, user: dict = Depends(get_current_user)):
     yaml_path = generate_yolo_dataset(dataset_id, out, {"train": 0.7, "val": 0.2, "test": 0.1})
     zip_path = out.parent / f"{out.name}.zip"
     return FileResponse(zip_path, media_type="application/zip", filename=f"dataset_{dataset_id}.zip")
+
+
+# ── Project-scoped endpoints (auto-resolve dataset from project) ──
+
+@router.post("/projects/{project_id}/upload")
+def project_upload(project_id: str, files: list[UploadFile] = File(...), user: dict = Depends(get_current_user)):
+    _own_project(project_id, user)
+    ds = resolve_project_dataset(project_id)
+    return upload_images(ds["id"], files)
+
+
+@router.get("/projects/{project_id}/images")
+def project_list_images(project_id: str, page: int = Query(1, ge=1),
+                         per_page: int = Query(50, ge=1, le=200),
+                         status_filter: str = Query("", alias="status"),
+                         user: dict = Depends(get_current_user)):
+    _own_project(project_id, user)
+    ds = resolve_project_dataset(project_id)
+    imgs = db["images"].filter(lambda i: i["dataset_id"] == ds["id"])
+    if status_filter: imgs = [i for i in imgs if i.get("status") == status_filter]
+    total = len(imgs)
+    start = (page - 1) * per_page
+    result = []
+    for i in imgs[start:start + per_page]:
+        i = dict(i)
+        i["thumbnail_url"] = f"/api/v1/images/{i['id']}/thumbnail"
+        i["image_url"] = f"/api/v1/images/{i['id']}/file"
+        result.append(i)
+    return {"items": result, "total": total, "page": page, "per_page": per_page}
+
+
+@router.get("/projects/{project_id}/classes")
+def project_list_classes(project_id: str, user: dict = Depends(get_current_user)):
+    _own_project(project_id, user)
+    ds = resolve_project_dataset(project_id)
+    return db["label_classes"].filter(lambda c: c["dataset_id"] == ds["id"])
+
+
+@router.post("/projects/{project_id}/classes", status_code=201)
+def project_create_class(project_id: str, data: LabelClassCreate, user: dict = Depends(get_current_user)):
+    _own_project(project_id, user)
+    ds = resolve_project_dataset(project_id)
+    existing = db["label_classes"].filter(lambda c: c["dataset_id"] == ds["id"])
+    return db["label_classes"].create({
+        "dataset_id": ds["id"], "name": data.name,
+        "yolo_index": len(existing), "color": data.color,
+    })
+
+
+@router.post("/projects/{project_id}/export/yolo")
+def project_export_yolo(project_id: str, user: dict = Depends(get_current_user)):
+    _own_project(project_id, user)
+    ds = resolve_project_dataset(project_id)
+    out = storage_service.exports_dir / f"dataset_{ds['id']}"
+    generate_yolo_dataset(ds["id"], out, {"train": 0.7, "val": 0.2, "test": 0.1})
+    zip_path = out.parent / f"{out.name}.zip"
+    return FileResponse(zip_path, media_type="application/zip", filename=f"dataset_{ds['id']}.zip")

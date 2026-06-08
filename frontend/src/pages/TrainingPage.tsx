@@ -1,10 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { Cpu, X } from 'lucide-react';
 
-interface DatasetInfo { id: string; name: string; imageCount: number; }
 interface Props {
-  datasets: DatasetInfo[];
-  onStart: (c: { name: string; model: string; epochs: number; imgsz: number; batch: number; device: string; datasetId: string }) => Promise<any>;
+  onStart: (c: { name: string; model: string; epochs: number; imgsz: number; batch: number; device: string; datasetId?: string }) => Promise<any>;
   onClose: () => void;
   training: boolean;
 }
@@ -15,14 +13,13 @@ const MODELS = [
   { value: 'yolov8m.pt', label: 'YOLOv8 Medium', desc: '更高精度' },
 ];
 
-export default function TrainingPage({ datasets, onStart, onClose }: Props) {
+export default function TrainingPage({ onStart, onClose }: Props) {
   const [name, setName] = useState(`train_${new Date().toISOString().slice(0, 10)}`);
   const [model, setModel] = useState('yolov8n.pt');
   const [epochs, setEpochs] = useState(50);
   const [imgsz, setImgsz] = useState(640);
   const [batch, setBatch] = useState(16);
   const [device, setDevice] = useState('');
-  const [datasetId, setDatasetId] = useState(datasets[0]?.id || '');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -57,7 +54,7 @@ export default function TrainingPage({ datasets, onStart, onClose }: Props) {
   async function handleStart() {
     setLoading(true); setError('');
     try {
-      const result = await onStart({ name, model, epochs, imgsz, batch, device, datasetId });
+      const result = await onStart({ name, model, epochs, imgsz, batch, device, datasetId: '' });
       setTotalEpochs(epochs);
       setJobId(result?.id || 'unknown');
       setJobStatus('queued');
@@ -148,12 +145,6 @@ export default function TrainingPage({ datasets, onStart, onClose }: Props) {
               <label className={lbl}>训练名称</label>
               <input value={name} onChange={e => setName(e.target.value)} placeholder="自动生成或自定义" className={inp} />
             </div>
-            <div>
-              <label className={lbl}>数据集</label>
-              <select value={datasetId} onChange={e => setDatasetId(e.target.value)} className={inp}>
-                {datasets.map(d => <option key={d.id} value={d.id}>{d.name} ({d.imageCount} 张图片)</option>)}
-              </select>
-            </div>
           </div>
         </section>
 
@@ -204,7 +195,7 @@ export default function TrainingPage({ datasets, onStart, onClose }: Props) {
         </section>
 
         {error && <div className="text-xs text-red-500 bg-red-50 rounded-lg p-3">{error}</div>}
-        <button onClick={handleStart} disabled={loading || !datasetId}
+        <button onClick={handleStart} disabled={loading}
           className="w-full py-3 bg-purple-600 text-white rounded-lg text-sm font-medium hover:bg-purple-700 disabled:bg-gray-300 transition-colors">
           {loading ? '启动中...' : '开始训练'}
         </button>

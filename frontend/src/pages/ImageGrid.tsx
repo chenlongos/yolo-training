@@ -1,20 +1,21 @@
 import { useState } from 'react';
-import type { Image, Dataset, LabelClass } from '../types';
+import type { Image, LabelClass } from '../types';
 import ImageCard from '../components/ImageCard';
 import FilterBar from '../components/FilterBar';
 import Pagination from '../components/Pagination';
 
-const PER_PAGE = 54;
+const PER_PAGE = 56;
 
 interface Props {
-  dataset: Dataset;
+  projectId: string;
+  projectName: string;
   images: Image[];
   classes: LabelClass[];
   page: number;
   total: number;
   onPage: (p: number) => void;
   onSearch: (q: string) => void;
-  onAnnotate: (datasetId: string) => void;
+  onAnnotate: () => void;
   onTrain: () => void;
   onImageClick: (index: number) => void;
   onDeleteImages: (ids: string[]) => void;
@@ -26,13 +27,9 @@ function imgStatus(s: string): 'checked' | 'person' | 'edit' {
   return 'edit';
 }
 
-export default function ImageGrid({ dataset, images, classes, page, total, onPage, onSearch, onAnnotate, onTrain, onImageClick, onDeleteImages }: Props) {
+export default function ImageGrid({ projectId, projectName, images, classes, page, total, onPage, onSearch, onAnnotate, onTrain, onImageClick, onDeleteImages }: Props) {
   const [filterText, setFilterText] = useState('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
-
-  if (!dataset) {
-    return <div className="w-full flex-1 flex items-center justify-center text-gray-400 text-sm">数据集未找到</div>;
-  }
 
   const filtered = filterText
     ? (images || []).filter(i => i.filename.toLowerCase().includes(filterText.toLowerCase()))
@@ -63,7 +60,7 @@ export default function ImageGrid({ dataset, images, classes, page, total, onPag
       {/* Header + Actions */}
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-3">
-          <h3 className="text-sm font-semibold text-gray-800">{dataset.name}</h3>
+          <h3 className="text-sm font-semibold text-gray-800">{projectName}</h3>
           <span className="text-xs text-gray-500">{total} 张</span>
         </div>
         <div className="flex items-center gap-2">
@@ -76,9 +73,9 @@ export default function ImageGrid({ dataset, images, classes, page, total, onPag
           <button onClick={selectAll} className="px-3 py-1.5 text-xs rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50">
             {selected.size === filtered.length && filtered.length > 0 ? '取消全选' : '全选'}
           </button>
-          <button onClick={() => onAnnotate(dataset.id)} className="px-4 py-1.5 text-xs rounded-lg bg-violet-600 text-white hover:bg-violet-700 font-medium">标注</button>
+          <button onClick={() => onAnnotate()} className="px-4 py-1.5 text-xs rounded-lg bg-violet-600 text-white hover:bg-violet-700 font-medium">标注</button>
           <button onClick={onTrain} className="px-4 py-1.5 text-xs rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 font-medium">训练</button>
-          <a href={`/api/v1/datasets/${dataset.id}/export/yolo`} onClick={e => e.stopPropagation()}
+          <a href={`/api/v1/projects/${projectId}/export/yolo`} onClick={e => e.stopPropagation()}
             className="px-4 py-1.5 text-xs rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 font-medium no-underline">导出 YOLO</a>
         </div>
       </div>
