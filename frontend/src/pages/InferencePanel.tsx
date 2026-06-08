@@ -332,7 +332,23 @@ export default function InferencePanel({ models, activeModelId }: Props) {
             </button>
           ) : mode === 'image' ? (
             <div className="relative">
-              <img src={file.url} alt="preview" className="w-full max-h-64 object-contain rounded-lg border" />
+              {/* Show annotated result on the image itself; fall back to original preview */}
+              <img
+                src={imgResult?.image_base64 ? `data:image/jpeg;base64,${imgResult.image_base64}` : file.url}
+                alt="preview"
+                className="w-full max-h-80 object-contain rounded-lg border"
+              />
+              {/* Detection overlay on image */}
+              {imgResult && imgResult.detections.length > 0 && (
+                <div className="absolute bottom-2 left-2 right-2 space-y-1 max-h-32 overflow-y-auto">
+                  {imgResult.detections.map((d, i) => (
+                    <div key={i} className="flex items-center justify-between bg-black/70 text-white rounded px-2 py-0.5 text-xs backdrop-blur-sm">
+                      <span className="font-medium">{d.class}</span>
+                      <span className="font-mono">{(d.confidence * 100).toFixed(1)}%</span>
+                    </div>
+                  ))}
+                </div>
+              )}
               <button onClick={() => { setFile(null); setImgResult(null); }}
                 className="absolute top-2 right-2 px-2 py-1 text-xs bg-white/90 rounded shadow hover:bg-white">更换</button>
             </div>
@@ -358,32 +374,11 @@ export default function InferencePanel({ models, activeModelId }: Props) {
 
       {error && <div className="text-xs text-red-500 bg-red-50 rounded-lg p-3">{error}</div>}
 
-      {/* Image result */}
+      {/* Image result summary */}
       {imgResult && (
-        <div className="space-y-4">
-          {imgResult.image_base64 && (
-            <div>
-              <label className={lbl}>推理结果</label>
-              <img src={`data:image/jpeg;base64,${imgResult.image_base64}`} alt="result" className="w-full rounded-lg border" />
-            </div>
-          )}
-          <div className="flex items-center gap-2 text-sm">
-            <Crosshair className="w-4 h-4 text-violet-500" />
-            <span className="text-gray-700 font-medium">{imgResult.count} 个检测结果</span>
-          </div>
-          {imgResult.detections.length > 0 && (
-            <div className="space-y-2 max-h-64 overflow-y-auto">
-              {imgResult.detections.map((d, i) => (
-                <div key={i} className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2 text-sm">
-                  <span className="text-gray-700 font-medium">{d.class}</span>
-                  <div className="flex items-center gap-3 text-xs">
-                    <span className="text-gray-500">[{d.bbox?.map(v => Math.round(v)).join(', ')}]</span>
-                    <span className="text-violet-600 font-mono font-bold">{(d.confidence * 100).toFixed(1)}%</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+        <div className="flex items-center gap-2 text-sm">
+          <Crosshair className="w-4 h-4 text-violet-500" />
+          <span className="text-gray-700 font-medium">{imgResult.count} 个检测结果</span>
         </div>
       )}
 
