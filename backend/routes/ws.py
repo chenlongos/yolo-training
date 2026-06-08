@@ -62,10 +62,30 @@ async def training_progress_ws(
         await redis_conn.close()
 
 
+def _resolve_ws_model(model_id: str) -> dict | None:
+    """Resolve model for WebSocket inference. Supports pretrained_ prefix."""
+    m = db["trained_models"].get(model_id)
+    if m:
+        return m
+
+    # Pretrained model: pretrained_yolov8n -> storage/models/pretrained/yolov8n.pt
+    if model_id.startswith("pretrained_"):
+        name = model_id[len("pretrained_"):]
+        pt_path = storage_service.storage_root / "models" / "pretrained" / f"{name}.pt"
+        if pt_path.exists():
+            return {
+                "id": model_id, "name": name,
+                "weights_path": str(pt_path),
+                "format_type": "pretrained",
+            }
+
+    return None
+
+
 @router.websocket("/ws/inference/{model_id}")
 async def inference_ws(websocket: WebSocket, model_id: str, conf: float = 0.25):
     """WebSocket real-time inference: receive JPEG frames, return annotated JPEG."""
-    m = db["trained_models"].get(model_id)
+    m = _resolve_ws_model(model_id)
     if not m:
         await websocket.close(code=4004, reason="Model not found")
         return

@@ -39,13 +39,65 @@ def _resolve_device(device: str) -> str:
     return "cpu"
 
 
+def _resolve_model_path(model_path: str) -> str:
+    """Resolve model path — store pretrained models under storage/models/."""
+    from pathlib import Path as P
+    # If it's already an absolute path that exists, use it directly
+    p = P(model_path)
+    if p.is_absolute() and p.exists():
+        return str(p)
+
+    # Try storage/models/ first (for previously downloaded models)
+    storage_root = P(__file__).resolve().parent.parent / "storage"
+    models_dir = storage_root / "models" / "pretrained"
+    models_dir.mkdir(parents=True, exist_ok=True)
+
+    # Check if model exists in storage
+    local = models_dir / p.name if not p.is_absolute() else p
+    if local.exists():
+        return str(local)
+
+    # Check current directory
+    if p.exists():
+        import shutil
+        shutil.copy2(str(p), str(local))
+        return str(local)
+
+    # Let ultralytics download it — but specify the download dir via env
+    import os
+    os.environ["YOLO_CONFIG_DIR"] = str(models_dir.parent)
+    # Fallback: just pass the name, ultralytics downloads to cwd
+    # We'll move it after __post_init__
+    return model_path
+
+
 @dataclass
 class ModelAdapter:
     model_path: str
 
     def __post_init__(self) -> None:
         yolo_cls = _resolve_yolo_class()
-        self.model = yolo_cls(self.model_path)
+        resolved = _resolve_model_path(self.model_path)
+        self.model = yolo_cls(resolved)
+        # Move downloaded pretrained model to storage if it landed in cwd
+        self._stash_pretrained()
+
+    def _stash_pretrained(self) -> None:
+        """Move pretrained .pt files from cwd to storage/models/pretrained/."""
+        from pathlib import Path as P
+        from shutil import move
+        storage_root = P(__file__).resolve().parent.parent / "storage"
+        pretrained_dir = storage_root / "models" / "pretrained"
+        pretrained_dir.mkdir(parents=True, exist_ok=True)
+
+        # Check common pretrained model names
+        for f in P(".").glob("yolov*.pt"):
+            dest = pretrained_dir / f.name
+            if not dest.exists():
+                try:
+                    move(str(f), str(dest))
+                except Exception:
+                    pass
 
     def train(
         self,

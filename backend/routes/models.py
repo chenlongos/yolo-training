@@ -35,9 +35,31 @@ def _resolve_model_path(m: dict) -> str:
         raise HTTPException(400, detail="Model weights not available")
     return path
 
-def _own_model(mid: str, user: dict) -> dict:
+def _resolve_model(mid: str) -> dict | None:
+    """Resolve a model ID — may be a DB record or a pretrained model on disk."""
     m = db["trained_models"].get(mid)
-    if not m: raise HTTPException(404, detail="Model not found")
+    if m:
+        return m
+    # Pretrained models: pretrained_yolov8n -> storage/models/pretrained/yolov8n.pt
+    if mid.startswith("pretrained_"):
+        name = mid[len("pretrained_"):]
+        pt_path = storage_service.storage_root / "models" / "pretrained" / f"{name}.pt"
+        if pt_path.exists():
+            return {
+                "id": mid, "name": name, "project_id": "",
+                "weights_path": str(pt_path), "status": "completed",
+                "format_type": "pretrained",
+            }
+    return None
+
+
+def _own_model(mid: str, user: dict) -> dict:
+    m = _resolve_model(mid)
+    if not m:
+        raise HTTPException(404, detail="Model not found")
+    # Pretrained models are global — no ownership check needed
+    if m.get("format_type") == "pretrained":
+        return m
     p = db["projects"].get(m["project_id"])
     if not p or str(p.get("user_id")) != str(user.get("id")): raise HTTPException(404, detail="Project not found")
     return m
@@ -46,7 +68,30 @@ def _own_model(mid: str, user: dict) -> dict:
 def list_models(project_id: str = Query(...), user: dict = Depends(get_current_user)):
     p = db["projects"].get(project_id)
     if not p or str(p.get("user_id")) != str(user.get("id")): raise HTTPException(404, detail="Project not found")
-    return {"items": db["trained_models"].filter(lambda m: m["project_id"] == project_id), "total": len(db["trained_models"].filter(lambda m: m["project_id"] == project_id))}
+
+    items = db["trained_models"].filter(lambda m: m["project_id"] == project_id)
+
+    # Include pretrained models from storage/models/pretrained/
+    from pathlib import Path
+    pretrained_dir = storage_service.storage_root / "models" / "pretrained"
+    if pretrained_dir.exists():
+        for pt_file in pretrained_dir.glob("*.pt"):
+            existing = any(
+                m.get("weights_path") and Path(m["weights_path"]).name == pt_file.name
+                for m in items
+            )
+            if not existing:
+                items.append({
+                    "id": f"pretrained_{pt_file.stem}",
+                    "project_id": project_id,
+                    "name": pt_file.stem,
+                    "status": "completed",
+                    "weights_path": str(pt_file),
+                    "format_type": "pretrained",
+                    "metrics": None,
+                })
+
+    return {"items": items, "total": len(items)}
 
 @router.get("/{model_id}")
 def get_model(model_id: str, user: dict = Depends(get_current_user)):
@@ -120,8 +165,13 @@ def export_model(model_id: str, format: str = "onnx", user: dict = Depends(get_c
         except Exception as e:
             raise HTTPException(500, detail=f"FP16 export failed: {e}")
     if format == "cvimodel":
-        from backend.services.cvimodel_service import generate_cvimodel_guide
-        return generate_cvimodel_guide(model_id)
+        from backend.services.cvimodel_service import start_cvimodel_conversion, get_conversion_status
+        # Check if already running
+        st = get_conversion_status(model_id)
+        if st["status"] == "running":
+            raise HTTPException(409, detail="CVIModel conversion is already running")
+        start_cvimodel_conversion(model_id)
+        return {"format": "cvimodel", "status": "started"}
     if format == "int8_onnx":
         onnx_path = m.get("onnx_path")
         if not onnx_path or not Path(onnx_path).exists():
@@ -297,6 +347,14 @@ def cvimodel_docker_status(user: dict = Depends(get_current_user)):
     """Check if Docker and the sophgo/tpuc_dev image are ready for cvimodel conversion."""
     from backend.services.cvimodel_service import check_docker_status
     return check_docker_status()
+
+
+@router.get("/{model_id}/conversion-status")
+def model_conversion_status(model_id: str, user: dict = Depends(get_current_user)):
+    """Get cvimodel conversion progress for a model."""
+    _own_model(model_id, user)
+    from backend.services.cvimodel_service import get_conversion_status
+    return get_conversion_status(model_id)
 
 
 @router.get("/{model_id}/deploy")
