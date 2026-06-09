@@ -106,10 +106,33 @@ def delete_image(image_id: str, user: dict = Depends(get_current_user)):
     img = _own_img(image_id, user)
     ds = db["datasets"].get(img["dataset_id"])
     if ds: db["datasets"].update(ds["id"], {"image_count": max(0, ds["image_count"] - 1)})
+
+    # Delete annotations from DB
     for ann in db["annotations"].filter(lambda a: a["image_id"] == image_id):
         db["annotations"].delete(ann["id"])
-    # Remove YOLO label file if exists
-    save_yolo_labels(image_id)
+
+    # Delete YOLO label file from disk
+    from backend.services.dataset_service import _label_path_for_image
+    label_path = _label_path_for_image(img)
+    if label_path.exists():
+        label_path.unlink()
+
+    # Delete image file and thumbnail from disk
+    import os
+    from pathlib import Path
+    from backend.services.storage_service import storage_service
+
+    for key in ["storage_path", "thumbnail_path"]:
+        fp = img.get(key)
+        if fp:
+            try:
+                p = storage_service.backend._full_path(fp)
+                if p.exists():
+                    p.unlink()
+            except Exception:
+                pass
+
+    # Delete DB record
     db["images"].delete(image_id)
 
 # Annotations
@@ -183,6 +206,65 @@ def project_upload(project_id: str, files: list[UploadFile] = File(...), user: d
     _own_project(project_id, user)
     ds = resolve_project_dataset(project_id)
     return upload_images(ds["id"], files)
+
+
+@router.post("/projects/{project_id}/capture-url")
+def project_capture_url(project_id: str, url: str = Query(...), user: dict = Depends(get_current_user)):
+    """Capture a single frame from an MJPEG/RTSP URL and save to the project dataset."""
+    _own_project(project_id, user)
+    ds = resolve_project_dataset(project_id)
+
+    import cv2
+    import uuid
+    from backend.services.storage_service import storage_service
+
+    cap = cv2.VideoCapture(url)
+    if not cap.isOpened():
+        raise HTTPException(400, detail=f"Cannot open stream: {url}")
+
+    try:
+        ret, frame = cap.read()
+        if not ret or frame is None:
+            raise HTTPException(400, detail="Failed to read frame from stream")
+    finally:
+        cap.release()
+
+    # Save frame as JPEG
+    import tempfile
+    image_uuid = str(uuid.uuid4())
+    rel_path = f"datasets/{ds['id']}/{image_uuid}.jpg"
+    abs_path = storage_service.backend._full_path(rel_path)
+    abs_path.parent.mkdir(parents=True, exist_ok=True)
+    cv2.imwrite(str(abs_path), frame, [cv2.IMWRITE_JPEG_QUALITY, 90])
+
+    # Generate thumbnail
+    from PIL import Image
+    thumb_rel = f"datasets/{ds['id']}/thumbnails/{image_uuid}_thumb.jpg"
+    thumb_full = storage_service.backend._full_path(thumb_rel)
+    thumb_full.parent.mkdir(parents=True, exist_ok=True)
+    h, w = frame.shape[:2]
+    with Image.open(abs_path) as img:
+        img.thumbnail((256, 256), Image.LANCZOS)
+        img.save(thumb_full, "JPEG", quality=80)
+
+    file_size = abs_path.stat().st_size
+    filename = f"capture_{image_uuid[:8]}.jpg"
+
+    img_record = db["images"].create({
+        "dataset_id": ds["id"],
+        "filename": filename,
+        "storage_path": rel_path,
+        "thumbnail_path": thumb_rel,
+        "width": w,
+        "height": h,
+        "file_size_bytes": file_size,
+        "status": "uploaded",
+    })
+
+    ds["image_count"] = ds.get("image_count", 0) + 1
+    db["datasets"].update(ds["id"], {"image_count": ds["image_count"]})
+
+    return {"uploaded": 1, "errors": [], "image": img_record}
 
 
 @router.get("/projects/{project_id}/images")

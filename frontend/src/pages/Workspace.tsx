@@ -35,9 +35,8 @@ export default function Workspace() {
 
   // 上传
   const [sourceType, setSourceType] = useState<SourceType>('webcam');
-  const [ipUrl, setIpUrl] = useState('http://192.168.1.100:8080/video');
+  const [carIp, setCarIp] = useState('127.0.0.1');
   const [camActive, setCamActive] = useState(false);
-  const [captureCount, setCaptureCount] = useState(0);
   const [uploadFiles, setUploadFiles] = useState<File[]>([]);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploading, setUploading] = useState(false);
@@ -164,15 +163,50 @@ export default function Workspace() {
   }
 
   async function toggleCamera() {
-    if (camActive) { if (streamRef.current) { streamRef.current.getTracks().forEach(t => t.stop()); streamRef.current = null; } if (videoRef.current) videoRef.current.srcObject = null; setCamActive(false); }
-    else { setCamActive(true); if (sourceType === 'webcam') { try { const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } }); if (videoRef.current) { videoRef.current.srcObject = stream; streamRef.current = stream; } } catch {} } }
+    if (camActive) {
+      if (streamRef.current) { streamRef.current.getTracks().forEach(t => t.stop()); streamRef.current = null; }
+      setCamActive(false);
+      return;
+    }
+    // IP camera: just toggle the connection state
+    if (sourceType === 'ipcam') {
+      setCamActive(true);
+      return;
+    }
+    // Webcam: get local camera stream
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } });
+      streamRef.current = stream;
+      setCamActive(true);
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          const v = document.getElementById('capture-video') as HTMLVideoElement | null;
+          if (v) { v.srcObject = stream; v.play().catch(() => {}); }
+        });
+      });
+    } catch (e: any) {
+      alert('无法访问摄像头: ' + (e?.message || '请检查浏览器权限设置'));
+    }
   }
   async function captureFrame() {
+    // IP camera: capture via backend
+    if (sourceType === 'ipcam') {
+      if (!carIp) return;
+      const streamUrl = `http://${carIp}/api/camera/stream?fps=30`;
+      try {
+        await projectData.captureUrl(activeProject, streamUrl);
+        projectData.images(activeProject, imgPage).then(d => { setImgList(d.items); setImgTotal(d.total); });
+      } catch (e: any) {
+        alert('捕获失败: ' + (e?.message || '无法连接到摄像头'));
+      }
+      return;
+    }
+    // Webcam: capture from local video element
     const v = videoRef.current || document.getElementById('capture-video') as HTMLVideoElement; if (!v) return;
     const c = document.createElement('canvas'); c.width = v.videoWidth; c.height = v.videoHeight; c.getContext('2d')!.drawImage(v, 0, 0);
     const blob = await new Promise<Blob>(r => c.toBlob(b => r(b!), 'image/jpeg', 0.9));
     const fd = new FormData(); fd.append('files', blob, `capture_${Date.now()}.jpg`);
-    await projectData.upload(activeProject, fd); setCaptureCount(c => c + 1);
+    await projectData.upload(activeProject, fd);
     projectData.images(activeProject, imgPage).then(d => { setImgList(d.items); setImgTotal(d.total); });
   }
 
@@ -224,9 +258,10 @@ export default function Workspace() {
                     onStart={handleTraining} onClose={() => setRightPanel('models')} training={false} />
                 )}
                 {rightPanel === 'upload' && <UploadPanel
-                  sourceType={sourceType} ipUrl={ipUrl} camActive={camActive}
-                  uploadFiles={uploadFiles} uploadProgress={uploadProgress} uploading={uploading} captureCount={captureCount}
-                  onSourceType={setSourceType} onIpUrl={setIpUrl} onToggleCamera={toggleCamera} onCapture={captureFrame}
+                  sourceType={sourceType} carIp={carIp} camActive={camActive}
+                  uploadFiles={uploadFiles} uploadProgress={uploadProgress} uploading={uploading} totalImages={imgTotal}
+                  onSourceType={(t) => { if (camActive) toggleCamera(); setSourceType(t); }}
+                  onCarIp={setCarIp} onToggleCamera={toggleCamera} onCapture={captureFrame}
                   onFileSelect={files => setUploadFiles(prev => [...prev, ...files].slice(0, 500))}
                   onUpload={doUpload} onClearFiles={() => setUploadFiles([])}
                 />}
