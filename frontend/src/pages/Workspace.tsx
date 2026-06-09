@@ -44,6 +44,7 @@ export default function Workspace() {
 
   // 弹窗
   const [projectThumbs, setProjectThumbs] = useState<Record<string, string>>({});
+  const [projectModelCounts, setProjectModelCounts] = useState<Record<string, number>>({});
   const [showNewProject, setShowNewProject] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
   const [annotateOpen, setAnnotateOpen] = useState(false);
@@ -55,15 +56,20 @@ export default function Workspace() {
   // 加载
   useEffect(() => { projects.list().then(d => setProjectList(d.items)).catch(() => {}); }, []);
 
-  // 加载项目缩略图（每个项目第一张图片）
+  // 加载项目缩略图和模型数量
   useEffect(() => {
     projectList.forEach(p => {
-      if (projectThumbs[p.id]) return; // already loaded
-      projectData.images(p.id, 1).then(d => {
-        if (d.items.length > 0) {
-          const thumb = d.items[0].thumbnail_url || d.items[0].image_url;
-          if (thumb) setProjectThumbs(prev => ({ ...prev, [p.id]: thumb }));
-        }
+      if (!projectThumbs[p.id]) {
+        projectData.images(p.id, 1).then(d => {
+          if (d.items.length > 0) {
+            const thumb = d.items[0].thumbnail_url || d.items[0].image_url;
+            if (thumb) setProjectThumbs(prev => ({ ...prev, [p.id]: thumb }));
+          }
+        }).catch(() => {});
+      }
+      // Load model count per project
+      modelApi.list(p.id).then(d => {
+        setProjectModelCounts(prev => ({ ...prev, [p.id]: d.items?.length || 0 }));
       }).catch(() => {});
     });
   }, [projectList]);
@@ -258,7 +264,7 @@ export default function Workspace() {
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                     {projectList.map(p => {
-                      const mCount = modelList.filter(m => m.project_id === p.id).length;
+                      const mCount = projectModelCounts[p.id] ?? 0;
                       const daysAgo = Math.floor((Date.now() - new Date(p.created_at).getTime()) / 86400000);
                       return (
                         <div key={p.id} onClick={() => setActiveProject(p.id)}

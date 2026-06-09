@@ -15,6 +15,7 @@ interface CviProgress {
   progress: number;
   step: string;
   error: string;
+  log: string;
 }
 
 const CONVERSIONS = [
@@ -32,7 +33,32 @@ export default function ModelDetail({ model: m, onDelete, onInference, onRefresh
   const [cviProgress, setCviProgress] = useState<CviProgress | null>(null);
   const pollRef = useRef<number>(0);
 
-  // Poll cvimodel conversion progress
+  // Always check cvimodel status (on mount and when model changes)
+  useEffect(() => {
+    let cancelled = false;
+    async function checkAndPoll() {
+      try {
+        const resp = await fetch(`/api/v1/models/${m.id}/conversion-status`);
+        const p: CviProgress = await resp.json();
+        if (cancelled) return;
+        setCviProgress(p);
+
+        if (p.status === 'running') {
+          setConverting('cvimodel');
+        } else if (p.status === 'completed') {
+          setConverting(null);
+          setConverted(prev => new Set(prev).add('cvimodel'));
+        } else if (p.status === 'failed') {
+          setConverting(null);
+          setConvertError(p.error || '转换失败');
+        }
+      } catch {}
+    }
+    checkAndPoll();
+    return () => { cancelled = true; };
+  }, [m.id]);
+
+  // Poll loop when converting=cvimodel
   useEffect(() => {
     if (converting !== 'cvimodel') return;
     async function poll() {
@@ -41,17 +67,20 @@ export default function ModelDetail({ model: m, onDelete, onInference, onRefresh
         const p: CviProgress = await resp.json();
         setCviProgress(p);
         if (p.status === 'completed') {
-          setConverting(null);
           setConverted(prev => new Set(prev).add('cvimodel'));
           onRefresh?.();
-          return;
+          return; // stop polling
         }
         if (p.status === 'failed') {
-          setConverting(null);
           setConvertError(p.error || '转换失败');
-          return;
+          return; // stop polling
         }
-      } catch {}
+        if (p.status !== 'running') {
+          return; // idle, stop polling
+        }
+      } catch {
+        // keep polling on network errors
+      }
       pollRef.current = window.setTimeout(poll, 2000);
     }
     poll();
@@ -159,8 +188,8 @@ export default function ModelDetail({ model: m, onDelete, onInference, onRefresh
 
               {/* CVI Model progress */}
               {cviProgress && converting === 'cvimodel' && (
-                <div className="bg-violet-50 border border-violet-200 rounded-lg p-3">
-                  <div className="flex items-center justify-between mb-2">
+                <div className="bg-violet-50 border border-violet-200 rounded-lg p-3 space-y-2">
+                  <div className="flex items-center justify-between">
                     <span className="text-xs font-medium text-violet-700">
                       {cviProgress.status === 'running' ? 'CVI Model 转换中' : cviProgress.status}
                     </span>
@@ -171,7 +200,15 @@ export default function ModelDetail({ model: m, onDelete, onInference, onRefresh
                       style={{ width: `${cviProgress.progress}%` }} />
                   </div>
                   {cviProgress.step && (
-                    <p className="text-xs text-violet-600 mt-1.5">{cviProgress.step}</p>
+                    <p className="text-xs text-violet-600">{cviProgress.step}</p>
+                  )}
+                  {cviProgress.error && (
+                    <p className="text-xs text-red-600 bg-red-50 rounded p-2">{cviProgress.error}</p>
+                  )}
+                  {cviProgress.log && (
+                    <pre className="text-[10px] text-gray-600 bg-gray-900 text-green-400 rounded p-2 max-h-48 overflow-y-auto font-mono leading-relaxed whitespace-pre-wrap">
+                      {cviProgress.log}
+                    </pre>
                   )}
                 </div>
               )}

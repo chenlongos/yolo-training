@@ -40,16 +40,40 @@ def _resolve_model(mid: str) -> dict | None:
     m = db["trained_models"].get(mid)
     if m:
         return m
-    # Pretrained models: pretrained_yolov8n -> storage/models/pretrained/yolov8n.pt
+    # Pretrained models and their format children
     if mid.startswith("pretrained_"):
+        pretrained_dir = storage_service.storage_root / "models" / "pretrained"
+        # Check for pretrained base: pretrained_yolov8n -> yolov8n.pt
         name = mid[len("pretrained_"):]
-        pt_path = storage_service.storage_root / "models" / "pretrained" / f"{name}.pt"
+        pt_path = pretrained_dir / f"{name}.pt"
         if pt_path.exists():
             return {
                 "id": mid, "name": name, "project_id": "",
                 "weights_path": str(pt_path), "status": "completed",
                 "format_type": "pretrained",
             }
+        # Check for format children: pretrained_yolov8n_onnx/fp16_onnx/etc
+        for suffix, fmt_type, label in [("_onnx", "onnx", "ONNX"), ("_fp16_onnx", "fp16_onnx", "FP16"),
+                                          ("_int8_onnx", "int8_onnx", "INT8"), ("_cvimodel", "cvimodel", "CVIModel")]:
+            if name.endswith(suffix):
+                base = name[:-len(suffix)]
+                # Try various filename patterns for the base model's exported files
+                candidates = [
+                    pretrained_dir / f"{base}.onnx",
+                    pretrained_dir / f"{base}.cvimodel",
+                    pretrained_dir / f"{base}_fp16.onnx",
+                    pretrained_dir / f"{base}_int8.onnx",
+                    pretrained_dir / "best.onnx",
+                    pretrained_dir / "best_fp16.onnx",
+                    pretrained_dir / "best_int8.onnx",
+                ]
+                for fmt_path in candidates:
+                    if fmt_path.exists():
+                        return {
+                            "id": mid, "name": f"{base} ({label})", "project_id": "",
+                            "weights_path": str(fmt_path), "status": "completed",
+                            "format_type": fmt_type, "parent_model_id": f"pretrained_{base}",
+                        }
     return None
 
 
@@ -57,8 +81,8 @@ def _own_model(mid: str, user: dict) -> dict:
     m = _resolve_model(mid)
     if not m:
         raise HTTPException(404, detail="Model not found")
-    # Pretrained models are global — no ownership check needed
-    if m.get("format_type") == "pretrained":
+    # Pretrained models and their children are global — no ownership check
+    if m.get("format_type") == "pretrained" or not m.get("project_id"):
         return m
     p = db["projects"].get(m["project_id"])
     if not p or str(p.get("user_id")) != str(user.get("id")): raise HTTPException(404, detail="Project not found")
@@ -71,25 +95,79 @@ def list_models(project_id: str = Query(...), user: dict = Depends(get_current_u
 
     items = db["trained_models"].filter(lambda m: m["project_id"] == project_id)
 
-    # Include pretrained models from storage/models/pretrained/
+    # Include pretrained models + their exported children
     from pathlib import Path
     pretrained_dir = storage_service.storage_root / "models" / "pretrained"
     if pretrained_dir.exists():
+        # Add pretrained .pt files
         for pt_file in pretrained_dir.glob("*.pt"):
+            pid = f"pretrained_{pt_file.stem}"
+            existing = any(m.get("id") == pid for m in items)
+            if not existing:
+                items.append({
+                    "id": pid, "project_id": project_id,
+                    "name": pt_file.stem, "status": "completed",
+                    "weights_path": str(pt_file), "format_type": "pretrained",
+                    "metrics": None,
+                })
+        # Auto-discover exported format files in pretrained dir
+        pretrained_ids = {f"pretrained_{f.stem}" for f in pretrained_dir.glob("*.pt")}
+        for fmt_file in pretrained_dir.glob("*"):
+            if fmt_file.suffix == ".pt":
+                continue
+            # Determine format type from extension/path
+            fmt_name = fmt_file.name  # full filename with extension
+            if "_fp16" in fmt_name or "fp16" in fmt_name:
+                fmt_type = "fp16_onnx"
+                label = "FP16"
+            elif "_int8" in fmt_name or "int8" in fmt_name:
+                fmt_type = "int8_onnx"
+                label = "INT8"
+            elif fmt_file.suffix == ".onnx":
+                fmt_type = "onnx"
+                label = "ONNX"
+            elif fmt_file.suffix == ".cvimodel":
+                fmt_type = "cvimodel"
+                label = "CVIModel"
+            else:
+                continue
+            # Derive base name from the parent .pt file
+            base_name = None
+            for pt_file in pretrained_dir.glob("*.pt"):
+                if pt_file.stem in fmt_name or fmt_name.startswith(pt_file.stem):
+                    base_name = pt_file.stem
+                    break
+            if base_name is None:
+                base_name = "yolov8n"  # fallback
+            parent_id = f"pretrained_{base_name}"
+            if parent_id not in pretrained_ids:
+                continue
+            # Check if already in list or DB
             existing = any(
-                m.get("weights_path") and Path(m["weights_path"]).name == pt_file.name
+                m.get("parent_model_id") == parent_id and m.get("format_type") == fmt_type
                 for m in items
             )
             if not existing:
                 items.append({
-                    "id": f"pretrained_{pt_file.stem}",
+                    "id": f"pretrained_{base_name}_{fmt_type}",
                     "project_id": project_id,
-                    "name": pt_file.stem,
+                    "name": f"{base_name} ({label})",
                     "status": "completed",
-                    "weights_path": str(pt_file),
-                    "format_type": "pretrained",
+                    "weights_path": str(fmt_file),
+                    "parent_model_id": parent_id,
+                    "format_type": fmt_type,
                     "metrics": None,
                 })
+
+    # Also include DB children of pretrained models
+    for child in db["trained_models"].all():
+        pid = child.get("parent_model_id", "")
+        if pid.startswith("pretrained_"):
+            existing = any(m.get("id") == child["id"] for m in items)
+            if not existing:
+                child_copy = dict(child)
+                child_copy["project_id"] = project_id
+                items.append(child_copy)
 
     return {"items": items, "total": len(items)}
 
@@ -97,11 +175,62 @@ def list_models(project_id: str = Query(...), user: dict = Depends(get_current_u
 def get_model(model_id: str, user: dict = Depends(get_current_user)):
     return _own_model(model_id, user)
 
+def _delete_model_files(m: dict):
+    """Delete all filesystem artifacts for a model."""
+    from pathlib import Path
+    import shutil
+
+    model_id = m["id"]
+
+    # Delete individual files (weights, ONNX, etc.)
+    for key in ["weights_path", "onnx_path", "fp16_onnx_path", "int8_onnx_path", "cvimodel_path"]:
+        fp = m.get(key)
+        if fp:
+            try:
+                pf = Path(fp)
+                if pf.exists():
+                    pf.unlink()
+            except Exception:
+                pass
+
+    # Delete model directory: storage/models/{model_id}/
+    model_dir = storage_service.storage_root / "models" / model_id
+    if model_dir.exists():
+        try:
+            shutil.rmtree(model_dir, ignore_errors=True)
+        except Exception:
+            pass
+
+    # Delete cvimodel work dir
+    tpu_dir = storage_service.storage_root / "tpu_convert" / model_id
+    if tpu_dir.exists():
+        try:
+            shutil.rmtree(tpu_dir, ignore_errors=True)
+        except Exception:
+            pass
+
+
 @router.delete("/{model_id}", status_code=204)
 def delete_model(model_id: str, user: dict = Depends(get_current_user)):
-    _own_model(model_id, user)
+    m = _own_model(model_id, user)
+
+    # Don't delete pretrained base models
+    if m.get("format_type") == "pretrained":
+        raise HTTPException(400, detail="Cannot delete pretrained models")
+
+    # Clean up training jobs
     for j in db["training_jobs"].filter(lambda j: j["model_id"] == model_id):
         db["training_jobs"].delete(j["id"])
+
+    # Clean up child models first
+    for child in db["trained_models"].filter(lambda c: c.get("parent_model_id") == model_id):
+        _delete_model_files(child)
+        db["trained_models"].delete(child["id"])
+
+    # Clean up this model's files
+    _delete_model_files(m)
+
+    # Delete DB record
     db["trained_models"].delete(model_id)
 
 @router.get("/{model_id}/download/{format}")
@@ -116,7 +245,6 @@ def download_model(model_id: str, format: str, user: dict = Depends(get_current_
 
 def _create_format_model(parent: dict, format_key: str, format_label: str, file_path: str) -> dict:
     """Create a child model entry for an exported format so it appears in the model list."""
-    # Check if a model for this format already exists
     existing = db["trained_models"].filter(
         lambda m: m.get("parent_model_id") == parent["id"] and m.get("format_type") == format_key
     )
@@ -125,8 +253,9 @@ def _create_format_model(parent: dict, format_key: str, format_label: str, file_
         db["trained_models"].update(m["id"], {format_key + "_path": file_path, "weights_path": file_path})
         return db["trained_models"].get(m["id"])
 
+    project_id = parent.get("project_id", "") or ""
     child = db["trained_models"].create({
-        "project_id": parent["project_id"],
+        "project_id": project_id,
         "name": f"{parent['name']} ({format_label})",
         "status": "completed",
         "weights_path": file_path,
@@ -165,11 +294,13 @@ def export_model(model_id: str, format: str = "onnx", user: dict = Depends(get_c
         except Exception as e:
             raise HTTPException(500, detail=f"FP16 export failed: {e}")
     if format == "cvimodel":
-        from backend.services.cvimodel_service import start_cvimodel_conversion, get_conversion_status
+        from backend.services.cvimodel_service import start_cvimodel_conversion, get_conversion_status, _update_progress
         # Check if already running
         st = get_conversion_status(model_id)
         if st["status"] == "running":
             raise HTTPException(409, detail="CVIModel conversion is already running")
+        # Clear previous completed/failed state
+        _update_progress(model_id, 0, "", status="idle")
         start_cvimodel_conversion(model_id)
         return {"format": "cvimodel", "status": "started"}
     if format == "int8_onnx":
