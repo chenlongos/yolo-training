@@ -3,6 +3,7 @@ import type { Image, LabelClass } from '../types';
 import ImageCard from '../components/ImageCard';
 import FilterBar from '../components/FilterBar';
 import Pagination from '../components/Pagination';
+import { userParam } from '../api/client';
 
 const PER_PAGE = 56;
 
@@ -102,7 +103,7 @@ export default function ImageGrid({ projectId, projectName, images, classes, pag
             <div className={selected.has(img.id) ? 'ring-2 ring-violet-500 rounded-lg' : ''}>
               <ImageCard
                 filename={img.filename}
-                imageUrl={img.thumbnail_url || img.image_url || `/api/v1/images/${img.id}/thumbnail`}
+                imageUrl={((img.thumbnail_url || img.image_url || `/api/v1/images/${img.id}/thumbnail`) + '?' + userParam())}
                 status={imgStatus(img.status)}
                 hasAnnotation={img.status === 'annotated'}
                 onClick={() => onImageClick(i)}

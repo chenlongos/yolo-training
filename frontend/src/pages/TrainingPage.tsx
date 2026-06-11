@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Cpu, X } from 'lucide-react';
+import { withUser } from '../api/client';
 
 interface Props {
   onStart: (c: { name: string; model: string; epochs: number; imgsz: number; batch: number; datasetId?: string }) => Promise<any>;
@@ -35,7 +36,7 @@ export default function TrainingPage({ onStart, onClose }: Props) {
     if (!jobId) return;
     async function poll() {
       try {
-        const resp = await fetch(`/api/v1/training/jobs/${jobId}`);
+        const resp = await fetch(withUser(`/api/v1/training/jobs/${jobId}`));
         const job = await resp.json();
         setJobStatus(job.status);
         setProgress(job.progress || 0);

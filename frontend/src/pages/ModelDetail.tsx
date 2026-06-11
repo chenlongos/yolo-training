@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Trash2, Crosshair, Download, Loader2, CheckCircle2, ChevronDown, ChevronRight } from 'lucide-react';
 import type { TrainedModel } from '../types';
 import { models as modelApi } from '../api/endpoints';
+import { withUser } from '../api/client';
 
 interface Props {
   model: TrainedModel;
@@ -38,7 +39,7 @@ export default function ModelDetail({ model: m, onDelete, onInference, onRefresh
     let cancelled = false;
     async function checkAndPoll() {
       try {
-        const resp = await fetch(`/api/v1/models/${m.id}/conversion-status`);
+        const resp = await fetch(withUser(`/api/v1/models/${m.id}/conversion-status`));
         const p: CviProgress = await resp.json();
         if (cancelled) return;
         setCviProgress(p);
@@ -63,7 +64,7 @@ export default function ModelDetail({ model: m, onDelete, onInference, onRefresh
     if (converting !== 'cvimodel') return;
     async function poll() {
       try {
-        const resp = await fetch(`/api/v1/models/${m.id}/conversion-status`);
+        const resp = await fetch(withUser(`/api/v1/models/${m.id}/conversion-status`));
         const p: CviProgress = await resp.json();
         setCviProgress(p);
         if (p.status === 'completed') {
@@ -92,7 +93,7 @@ export default function ModelDetail({ model: m, onDelete, onInference, onRefresh
     setConvertError('');
     setCviProgress(null);
     try {
-      const resp = await fetch(`/api/v1/models/${m.id}/export?format=${format}`, { method: 'POST' });
+      const resp = await fetch(withUser(`/api/v1/models/${m.id}/export?format=${format}`), { method: 'POST' });
       if (!resp.ok) {
         const err = await resp.json().catch(() => ({}));
         throw new Error((err as any).detail || `HTTP ${resp.status}`);

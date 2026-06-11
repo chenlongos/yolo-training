@@ -1,5 +1,4 @@
 import { useState } from 'react';
-
 type NavItem = 'projects' | 'models' | 'marketplace';
 
 const ITEMS: { key: NavItem; label: string }[] = [

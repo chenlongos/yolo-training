@@ -3,6 +3,7 @@ import { ArrowLeft, HelpCircle, Check, Pencil, Layers, Trash2, Undo2, ZoomIn, Zo
 import { images, annotations as annApi, projectData } from '../api/endpoints';
 import type { Image, Annotation, LabelClass } from '../types';
 import Modal from './Modal';
+import { userParam } from '../api/client';
 
 interface Props {
   projectId: string;
@@ -69,7 +70,7 @@ export default function AnnotationTool({ projectId, images: imgList, classes: in
       setZoomLevel(Math.round(s * 100));
       scheduleRender();
     };
-    el.src = img.image_url || `/api/v1/images/${img.id}/file`;
+    el.src = (img.image_url || `/api/v1/images/${img.id}/file`) + '?' + userParam();
   }, [imgIdx]);
 
   useEffect(() => { loadImage(); }, [loadImage]);

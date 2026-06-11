@@ -1,6 +1,6 @@
 """Dataset routes — file-based storage."""
 from pathlib import Path
-from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File
+from fastapi import APIRouter, Depends, Header, HTTPException, status, Query, UploadFile, File
 from fastapi.responses import FileResponse
 from backend.store import db
 from backend.schemas.dataset import DatasetCreate, AnnotationBulkUpdate, AnnotationCreate, LabelClassCreate
@@ -29,6 +29,11 @@ def _own_img(iid: str, user: dict) -> dict:
     if not img: raise HTTPException(404, detail="Image not found")
     _own_ds(img["dataset_id"], user)
     return img
+
+def _resolve_user_for_img(user: str = "", x_user: str = "") -> dict:
+    """Resolve user from query param or header for <img> tag requests."""
+    username = user or x_user or "dev"
+    return get_current_user(username)
 
 # Dataset CRUD
 @router.get("/projects/{project_id}/datasets")
@@ -77,14 +82,14 @@ def list_images(dataset_id: str, page: int = Query(1, ge=1), per_page: int = Que
     return {"items": result, "total": total, "page": page, "per_page": per_page}
 
 @router.get("/images/{image_id}/file")
-def get_file(image_id: str, user: dict = Depends(get_current_user)):
-    img = _own_img(image_id, user)
+def get_file(image_id: str, user: str = Query("", alias="user"), x_user: str = Header(default="", alias="X-User")):
+    img = _own_img(image_id, _resolve_user_for_img(user, x_user))
     path = storage_service.backend._full_path(img["storage_path"])
     return FileResponse(path) if path.exists() else HTTPException(404, detail="File not found")
 
 @router.get("/images/{image_id}/thumbnail")
-def get_thumb(image_id: str, user: dict = Depends(get_current_user)):
-    img = _own_img(image_id, user)
+def get_thumb(image_id: str, user: str = Query("", alias="user"), x_user: str = Header(default="", alias="X-User")):
+    img = _own_img(image_id, _resolve_user_for_img(user, x_user))
     thumb = img.get("thumbnail_path")
     path = storage_service.backend._full_path(thumb) if thumb else None
     if path and path.exists():

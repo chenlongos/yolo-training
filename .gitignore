@@ -23,3 +23,4 @@ migrations/versions/*
 
 # Docker
 docker-compose.override.yml
+Tennis*

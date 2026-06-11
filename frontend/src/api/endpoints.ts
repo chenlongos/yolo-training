@@ -1,14 +1,7 @@
-import { api } from './client';
-import type { User, Project, Dataset, Image, Annotation, LabelClass, ModelConfig, TrainingJob, TrainedModel } from '../types';
+import { api, userParam } from './client';
+import type { Project, Dataset, Image, Annotation, LabelClass, ModelConfig, TrainingJob, TrainedModel } from '../types';
 
 const BASE = '/api/v1';
-
-// Auth
-export const auth = {
-  register: (data: { username: string; email: string; password: string }) => api.post('/auth/register', data),
-  login: (data: { email: string; password: string }) => api.post('/auth/login', data),
-  me: () => api.get('/auth/me') as Promise<User>,
-};
 
 // Projects
 export const projects = {
@@ -40,8 +33,8 @@ export const datasets = {
 export const images = {
   get: (id: string) => api.get(`/images/${id}`) as Promise<{ image: Image; annotations: Annotation[] }>,
   delete: (id: string) => api.delete(`/images/${id}`),
-  getUrl: (id: string) => `${BASE}/images/${id}/file`,
-  getThumbnailUrl: (id: string) => `${BASE}/images/${id}/thumbnail`,
+  getUrl: (id: string) => `${BASE}/images/${id}/file?${userParam()}`,
+  getThumbnailUrl: (id: string) => `${BASE}/images/${id}/thumbnail?${userParam()}`,
 };
 
 // Annotations
@@ -83,7 +76,7 @@ export const models = {
     api.get(`/models?project_id=${projectId}`) as Promise<{ items: TrainedModel[]; total: number }>,
   get: (id: string) => api.get(`/models/${id}`) as Promise<TrainedModel>,
   delete: (id: string) => api.delete(`/models/${id}`),
-  downloadUrl: (id: string, format: string) => `${BASE}/models/${id}/download/${format}`,
+  downloadUrl: (id: string, format: string) => `${BASE}/models/${id}/download/${format}?${userParam()}`,
   export: (id: string, format = 'onnx') => api.post(`/models/${id}/export?format=${format}`),
   compare: (ids: string[]) => api.get(`/models/compare/data?ids=${ids.join(',')}`),
 };

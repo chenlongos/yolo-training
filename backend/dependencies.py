@@ -1,10 +1,7 @@
 """FastAPI dependencies — file-based, no database."""
 
-from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
-from jose import JWTError
+from fastapi import Header, Query, Request
 from backend.store import db
-from backend.services.auth_service import decode_token
 
 
 def resolve_project_dataset(project_id: str) -> dict:
@@ -20,38 +17,22 @@ def resolve_project_dataset(project_id: str) -> dict:
         return db["datasets"].get(ds["id"])
     return dss[0]
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
 
+def get_current_user(
+    x_user: str = Header(default="dev", alias="X-User"),
+) -> dict:
+    """Return user by X-User header. Creates user if not exists.
 
-def _get_or_create_default_user() -> dict:
+    NOTE: When calling directly (not via FastAPI DI), pass the username as a string.
+    For <img> tag / raw fetch support, endpoints should also accept ?user= query param
+    and pass it to this function.
+    """
     users = db["users"]
-    user = next((u for u in users.all() if u["email"] == "dev@example.com"), None)
+    user = next((u for u in users.all() if u["username"] == x_user), None)
     if not user:
         user = users.create({
-            "username": "dev", "email": "dev@example.com",
-            "password_hash": "$2b$12$LJ3m4ys3Lk0TSwHCpNqrFOXGF4LFTIqHBTjVGBqTLkSJ3vOLxDPTu",
-            "is_active": True, "is_superuser": True, "storage_used_bytes": 0,
+            "username": x_user, "email": f"{x_user}@local",
+            "password_hash": "", "is_active": True, "is_superuser": False,
+            "storage_used_bytes": 0,
         })
-    return user
-
-
-def get_current_user(token: str | None = Depends(oauth2_scheme)) -> dict:
-    if token is None:
-        return _get_or_create_default_user()
-    try:
-        payload = decode_token(token)
-        if payload.get("type") != "access":
-            return _get_or_create_default_user()
-        user_id = int(payload["sub"])
-    except (JWTError, KeyError, ValueError):
-        return _get_or_create_default_user()
-
-    users = db["users"]
-    user = users.get(str(user_id))
-    if not user:
-        # Try to find by int ID
-        for u in users.all():
-            if u.get("id") == user_id:
-                return u
-        return _get_or_create_default_user()
     return user

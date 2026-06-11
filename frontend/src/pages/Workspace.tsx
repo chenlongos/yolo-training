@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { projects, projectData, images as imgApi, training as trainApi, models as modelApi } from '../api/endpoints';
+import { userParam, withUser } from '../api/client';
 import type { Project, TrainedModel, Image, LabelClass } from '../types';
 import Sidebar from '../components/Sidebar';
 import ProjectSidebar, { type RightPanel } from '../components/ProjectSidebar';
@@ -62,7 +63,7 @@ export default function Workspace() {
         projectData.images(p.id, 1).then(d => {
           if (d.items.length > 0) {
             const thumb = d.items[0].thumbnail_url || d.items[0].image_url;
-            if (thumb) setProjectThumbs(prev => ({ ...prev, [p.id]: thumb }));
+            if (thumb) setProjectThumbs(prev => ({ ...prev, [p.id]: thumb + '?' + userParam() }));
           }
         }).catch(() => {});
       }
@@ -277,7 +278,7 @@ export default function Workspace() {
                     onImageClick={idx => openAnnotator(idx)}
                     onDeleteImages={async (ids) => {
                       for (const id of ids) {
-                        await fetch(`/api/v1/images/${id}`, { method: 'DELETE' });
+                        await fetch(withUser(`/api/v1/images/${id}`), { method: 'DELETE' });
                       }
                       projectData.images(activeProject, imgPage).then(d => { setImgList(d.items); setImgTotal(d.total); });
                     }} />

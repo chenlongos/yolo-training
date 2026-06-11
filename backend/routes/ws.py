@@ -4,11 +4,7 @@ import json, io, tempfile, shutil
 from pathlib import Path
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
-from jose import JWTError
-import redis.asyncio as aioredis
 
-from ..config import settings
-from ..services.auth_service import decode_token
 from ..store import db
 from ..services.storage_service import storage_service
 
@@ -28,38 +24,28 @@ def _get_ws_adapter(weights_path: str):
 async def training_progress_ws(
     websocket: WebSocket,
     job_id: str,
-    token: str = Query(...),
 ):
     """WebSocket endpoint for real-time training progress updates."""
-    # Verify JWT
-    try:
-        payload = decode_token(token)
-        if payload.get("type") != "access":
-            await websocket.close(code=4001)
-            return
-    except (JWTError, KeyError):
-        await websocket.close(code=4001)
-        return
-
     await websocket.accept()
-
-    redis_url = settings.CELERY_BROKER_URL
-    redis_conn = aioredis.from_url(redis_url)
-    pubsub = redis_conn.pubsub()
-    await pubsub.subscribe(f"training:progress:{job_id}")
-
+    import asyncio
     try:
-        async for message in pubsub.listen():
-            if message["type"] == "message":
-                data = json.loads(message["data"])
-                await websocket.send_json(data)
-                if data.get("type") in ("completed", "error"):
-                    break
+        while True:
+            job = db["training_jobs"].get(job_id)
+            if not job:
+                await websocket.send_json({"type": "error", "message": "Job not found"})
+                break
+            await websocket.send_json({
+                "type": "progress",
+                "status": job.get("status", ""),
+                "progress": job.get("progress", 0),
+                "current_epoch": job.get("current_epoch", 0),
+                "current_metric": job.get("current_metric"),
+            })
+            if job.get("status") in ("completed", "failed", "cancelled"):
+                break
+            await asyncio.sleep(2)
     except WebSocketDisconnect:
         pass
-    finally:
-        await pubsub.unsubscribe(f"training:progress:{job_id}")
-        await redis_conn.close()
 
 
 def _resolve_ws_model(model_id: str) -> dict | None:

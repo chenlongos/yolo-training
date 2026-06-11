@@ -473,13 +473,6 @@ async def predict_video(
         except Exception: pass
 
 
-@router.get("/cvimodel/status")
-def cvimodel_docker_status(user: dict = Depends(get_current_user)):
-    """Check if Docker and the sophgo/tpuc_dev image are ready for cvimodel conversion."""
-    from backend.services.cvimodel_service import check_docker_status
-    return check_docker_status()
-
-
 @router.get("/{model_id}/conversion-status")
 def model_conversion_status(model_id: str, user: dict = Depends(get_current_user)):
     """Get cvimodel conversion progress for a model."""

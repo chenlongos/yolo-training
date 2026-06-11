@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { Upload, Play, Loader2, Crosshair, Image, Video, Camera, StopCircle } from 'lucide-react';
 import type { TrainedModel } from '../types';
+import { withUser } from '../api/client';
 
 interface Detection {
   class: string;
@@ -186,7 +187,7 @@ export default function InferencePanel({ models, activeModelId }: Props) {
       const fd = new FormData();
       fd.append('file', file.file);
       const endpoint = mode === 'video' ? 'predict-video' : 'predict';
-      const resp = await fetch(`/api/v1/models/${selectedModel}/${endpoint}?conf=0.25`, {
+      const resp = await fetch(withUser(`/api/v1/models/${selectedModel}/${endpoint}?conf=0.25`), {
         method: 'POST',
         body: fd,
       });
