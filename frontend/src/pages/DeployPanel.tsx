@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState } from 'react';
 import { Rocket, Download, CheckCircle2, Box, Container, Loader2, Copy, Check, Car, Wifi } from 'lucide-react';
 import { models as modelApi } from '../api/endpoints';
 import type { TrainedModel } from '../types';
@@ -35,16 +35,9 @@ export default function DeployPanel({ models }: Props) {
 
   // Car deploy state
   const [carIp, setCarIp] = useState('192.168.1.100');
-  const [serverIp, setServerIp] = useState('');
   const [carDeploying, setCarDeploying] = useState(false);
   const [carProgress, setCarProgress] = useState(0);
   const [carStatus, setCarStatus] = useState('');
-  const carPollRef = useRef<number>(0);
-
-  // Auto-detect server LAN IP on mount
-  useEffect(() => {
-    fetch('/api/server-ip').then(r => r.json()).then(d => setServerIp(d.ip || '')).catch(() => {});
-  }, []);
 
   const allModels = models.filter(m => m.status === 'completed');
   const model = allModels.find(m => m.id === selectedModel);

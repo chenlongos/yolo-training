@@ -1,4 +1,4 @@
-import { Upload, Info, Code, ImageIcon, FileText, Video, FilePlus, FolderOpen, Camera, Wifi } from 'lucide-react';
+import { Upload, Info, ImageIcon, FileText, Video, FilePlus, FolderOpen, Camera, Wifi } from 'lucide-react';
 
 type SourceType = 'webcam' | 'file' | 'ipcam';
 

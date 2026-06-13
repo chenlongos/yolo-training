@@ -1,4 +1,4 @@
-import { ChevronDown, Image, List, Grid3X3 } from 'lucide-react';
+import { ChevronDown, List, Grid3X3 } from 'lucide-react';
 import type { LabelClass } from '../types';
 
 interface Props {

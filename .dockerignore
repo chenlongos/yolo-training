@@ -1,0 +1,49 @@
+# Dependencies
+frontend/node_modules
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Version control
+.git/
+.gitignore
+
+# IDE / editor
+.idea/
+.vscode/
+.DS_Store
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Build artifacts
+dist/
+build/
+
+# Runtime data
+storage/
+runs/
+
+# Documentation
+docs/
+*.md
+!README.md
+
+# Development scripts
+scripts/
+demo.py
+setup.py
+
+# Unused / auxiliary
+board/
+rknn/
+
+# Docker
+docker-compose.override.yml
+.dockerignore
+
+# Large data files
+*.zip
+Tennis_Ball/

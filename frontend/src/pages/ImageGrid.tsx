@@ -28,7 +28,7 @@ function imgStatus(s: string): 'checked' | 'person' | 'edit' {
   return 'edit';
 }
 
-export default function ImageGrid({ projectId, projectName, images, classes, page, total, onPage, onSearch, onAnnotate, onTrain, onImageClick, onDeleteImages }: Props) {
+export default function ImageGrid({ projectId, projectName, images, classes, page, total, onPage, onAnnotate, onTrain, onImageClick, onDeleteImages }: Props) {
   const [filterText, setFilterText] = useState('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
 

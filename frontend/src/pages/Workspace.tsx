@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { projects, projectData, images as imgApi, training as trainApi, models as modelApi } from '../api/endpoints';
+import { projects, projectData, training as trainApi, models as modelApi } from '../api/endpoints';
 import { userParam, withUser } from '../api/client';
 import type { Project, TrainedModel, Image, LabelClass } from '../types';
 import Sidebar from '../components/Sidebar';

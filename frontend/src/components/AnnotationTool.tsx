@@ -92,7 +92,6 @@ export default function AnnotationTool({ projectId, images: imgList, classes: in
 
       const anns = annsRef.current;
       const cls = clsRef.current;
-      const selectedId = selectedIdRef.current;
       const tool = toolRef.current;
 
       if (showLabelsRef.current) {

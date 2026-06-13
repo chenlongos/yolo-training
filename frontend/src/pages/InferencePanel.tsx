@@ -92,7 +92,7 @@ export default function InferencePanel({ models, activeModelId }: Props) {
         if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
         const jpegBytes = captureFrameJPEG();
         if (!jpegBytes) { stopLiveLoop(); return; }
-        wsRef.current.send(jpegBytes);
+        wsRef.current.send(jpegBytes.buffer as ArrayBuffer);
         liveTimer.current = window.setTimeout(sendFrame, 80);
       }
       sendFrame();

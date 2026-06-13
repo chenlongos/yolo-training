@@ -1,7 +1,7 @@
 import { UploadCloud, Edit3, Database, Tag, Cpu, Box, Rocket, ChevronDown, ArrowLeft, MoreHorizontal, Layout, Crosshair } from 'lucide-react';
 import type { TrainedModel } from '../types';
 
-export type RightPanel = 'upload' | 'data' | 'dataset' | 'models' | 'modelDetail' | 'inference' | 'deploy' | 'train' | null;
+export type RightPanel = 'upload' | 'data' | 'dataset' | 'classes' | 'models' | 'modelDetail' | 'inference' | 'deploy' | 'train' | null;
 
 interface NavItemData {
   label: string;

@@ -37,7 +37,7 @@ export default function TrainingJobMonitor({ projectId }: Props) {
           <div key={job.id} className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
-                <div className={`w-2 h-2 rounded-full ${job.status === 'running' ? 'bg-cyan-400 animate-pulse' : 'bg-amber-400'}`} />
+                <div className={`w-2 h-2 rounded-full ${statusColor[job.status] || 'bg-amber-400'} ${job.status === 'running' ? 'animate-pulse' : ''}`} />
                 <span className="text-sm font-medium text-gray-700">{statusText[job.status] || job.status}</span>
                 <span className="text-xs text-gray-400 font-mono">{job.id.slice(0, 8)}</span>
               </div>
