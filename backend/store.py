@@ -1,18 +1,17 @@
-"""File-based JSON store — no database required."""
+"""SQLAlchemy-backed store — same Collection API, now with PostgreSQL."""
 
-import json
-import os
-import uuid
-import threading
 from datetime import datetime, timezone
-from pathlib import Path
-from typing import TypeVar, Callable
+from typing import Callable, TypeVar
 
-STORAGE_DIR = Path(os.environ.get("STORAGE_ROOT", Path(__file__).resolve().parent.parent / "storage"))
-DATA_DIR = STORAGE_DIR / "data"
-DATA_DIR.mkdir(parents=True, exist_ok=True)
+from sqlalchemy import func
+from sqlalchemy.orm.attributes import flag_modified
 
-_lock = threading.Lock()
+from backend.database import SessionLocal
+from backend.models import (
+    User, Project, Dataset, DatasetVersion, LabelClass,
+    Image, Annotation, ModelConfig, TrainedModel, TrainingJob,
+)
+
 T = TypeVar("T")
 
 
@@ -20,69 +19,126 @@ def now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _model_to_dict(row) -> dict:
+    """Convert a SQLAlchemy model instance to a plain dict with ISO timestamps.
+
+    Also merges top-level keys from extra_data JSONB column for backward compat
+    with dynamic fields (e.g. cvimodel conversion progress).
+    """
+    if row is None:
+        return None
+    d = {}
+    for c in row.__table__.columns:
+        val = getattr(row, c.name)
+        if c.name == "extra_data":
+            continue  # Handled below
+        if isinstance(val, datetime):
+            d[c.name] = val.isoformat()
+        else:
+            d[c.name] = val
+    # Merge extra_data keys at top level (only keys not already present)
+    if hasattr(row, "extra_data"):
+        extra = getattr(row, "extra_data") or {}
+        if isinstance(extra, dict):
+            for k, v in extra.items():
+                if k not in d:
+                    d[k] = v
+    return d
+
+
 class Collection:
-    """A collection of records stored in a JSON file."""
+    """A collection backed by a SQLAlchemy model, keeping the original dict-based API."""
 
-    def __init__(self, name: str):
-        self.name = name
-        self._path = DATA_DIR / f"{name}.json"
+    def __init__(self, model_cls):
+        self.model = model_cls
 
-    def _read(self) -> list[dict]:
-        if not self._path.exists():
-            return []
-        with open(self._path, "r") as f:
-            return json.load(f)
-
-    def _write(self, data: list[dict]):
-        with open(self._path, "w") as f:
-            json.dump(data, f, indent=2, default=str)
+    def _session(self):
+        return SessionLocal()
 
     def all(self) -> list[dict]:
-        with _lock:
-            return self._read()
+        with self._session() as session:
+            rows = session.query(self.model).all()
+            return [_model_to_dict(r) for r in rows]
 
     def filter(self, fn: Callable[[dict], bool]) -> list[dict]:
+        """Load all rows and filter in Python. Compatible with existing lambda-based usage."""
         return [r for r in self.all() if fn(r)]
 
     def get(self, id: str) -> dict | None:
-        with _lock:
-            for r in self._read():
-                if r.get("id") == id:
-                    return r
-        return None
+        with self._session() as session:
+            row = session.get(self.model, id)
+            return _model_to_dict(row) if row else None
 
     def create(self, data: dict) -> dict:
-        with _lock:
-            records = self._read()
-            data["id"] = data.get("id") or str(uuid.uuid4())
-            data["created_at"] = data.get("created_at") or now()
-            records.append(data)
-            self._write(records)
-            return data
+        with self._session() as session:
+            data.setdefault("id", "")
+            data.setdefault("created_at", now())
+            if not data["id"]:
+                from backend.models import _new_id
+                data["id"] = _new_id()
+
+            # Parse created_at string back to datetime for the DB column
+            if isinstance(data.get("created_at"), str):
+                try:
+                    data["created_at"] = datetime.fromisoformat(data["created_at"])
+                except (ValueError, TypeError):
+                    data["created_at"] = datetime.now(timezone.utc)
+
+            obj = self.model(**data)
+            session.add(obj)
+            session.commit()
+            session.refresh(obj)
+            return _model_to_dict(obj)
 
     def update(self, id: str, patch: dict) -> dict | None:
-        with _lock:
-            records = self._read()
-            for i, r in enumerate(records):
-                if r.get("id") == id:
-                    r.update(patch)
-                    r["updated_at"] = now()
-                    records[i] = r
-                    self._write(records)
-                    return r
-        return None
+        with self._session() as session:
+            row = session.get(self.model, id)
+            if not row:
+                return None
+
+            patch.setdefault("updated_at", now())
+            extra = {}
+            for k, v in patch.items():
+                if hasattr(row, k):
+                    # Parse ISO datetime strings back to datetime objects
+                    if isinstance(v, str) and k in ("created_at", "updated_at", "started_at",
+                                                      "completed_at", "training_completed_at"):
+                        try:
+                            v = datetime.fromisoformat(v)
+                        except (ValueError, TypeError):
+                            pass
+                    setattr(row, k, v)
+                elif hasattr(row, "extra_data"):
+                    # Dynamic field — store in extra_data JSONB
+                    extra[k] = v
+                # If neither column nor extra_data, silently skip
+
+            # Merge extra fields into extra_data (in-place mutation for change tracking)
+            if extra:
+                current_extra = getattr(row, "extra_data")
+                if current_extra is None:
+                    current_extra = {}
+                    setattr(row, "extra_data", current_extra)
+                if isinstance(current_extra, dict):
+                    current_extra.update(extra)
+                    flag_modified(row, "extra_data")  # Ensure SQLAlchemy detects the mutation
+
+            session.commit()
+            session.refresh(row)
+            return _model_to_dict(row)
 
     def delete(self, id: str) -> bool:
-        with _lock:
-            records = self._read()
-            new_records = [r for r in records if r.get("id") != id]
-            if len(new_records) < len(records):
-                self._write(new_records)
-                return True
-        return False
+        with self._session() as session:
+            row = session.get(self.model, id)
+            if not row:
+                return False
+            session.delete(row)
+            session.commit()
+            return True
 
     def count(self) -> int:
-        return len(self._read())
+        with self._session() as session:
+            return session.query(func.count(self.model.id)).scalar()
 
     def paginate(self, page=1, per_page=20, fn: Callable[[dict], bool] | None = None) -> dict:
         items = self.filter(fn) if fn else self.all()
@@ -91,33 +147,30 @@ class Collection:
         return {"items": items[start : start + per_page], "total": total, "page": page, "per_page": per_page}
 
 
-# Global collections
+# Global collections — same names, same API, now SQL-backed
 db = {
-    "users": Collection("users"),
-    "projects": Collection("projects"),
-    "datasets": Collection("datasets"),
-    "dataset_versions": Collection("dataset_versions"),
-    "label_classes": Collection("label_classes"),
-    "images": Collection("images"),
-    "annotations": Collection("annotations"),
-    "model_configs": Collection("model_configs"),
-    "trained_models": Collection("trained_models"),
-    "training_jobs": Collection("training_jobs"),
+    "users": Collection(User),
+    "projects": Collection(Project),
+    "datasets": Collection(Dataset),
+    "dataset_versions": Collection(DatasetVersion),
+    "label_classes": Collection(LabelClass),
+    "images": Collection(Image),
+    "annotations": Collection(Annotation),
+    "model_configs": Collection(ModelConfig),
+    "trained_models": Collection(TrainedModel),
+    "training_jobs": Collection(TrainingJob),
 }
 
 
-# Seed default dev user
 def _seed():
+    """Seed default dev user."""
     users = db["users"]
     if not users.filter(lambda u: u["email"] == "dev@example.com"):
         users.create({
             "username": "dev",
             "email": "dev@example.com",
-            "password_hash": "$2b$12$LJ3m4ys3Lk0TSwHCpNqrFOXGF4LFTIqHBTjVGBqTLkSJ3vOLxDPTu",  # bcrypt hash of "dev"
+            "password_hash": "$2b$12$LJ3m4ys3Lk0TSwHCpNqrFOXGF4LFTIqHBTjVGBqTLkSJ3vOLxDPTu",
             "is_active": True,
             "is_superuser": True,
             "storage_used_bytes": 0,
         })
-
-
-_seed()

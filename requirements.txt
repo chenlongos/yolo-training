@@ -9,6 +9,10 @@ fastapi>=0.115.0
 uvicorn[standard]>=0.32.0
 python-multipart>=0.0.18
 
+# Database
+sqlalchemy>=2.0.0
+psycopg2-binary>=2.9.0
+
 # Auth
 python-jose[cryptography]>=3.3.0
 bcrypt>=4.0.0

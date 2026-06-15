@@ -1,6 +1,22 @@
 version: "3.9"
 
 services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: yolo-postgres
+    environment:
+      POSTGRES_USER: yolo
+      POSTGRES_PASSWORD: yolo
+      POSTGRES_DB: yolo_training
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U yolo -d yolo_training"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   backend:
     build:
       context: .
@@ -8,10 +24,14 @@ services:
     container_name: yolo-backend
     environment:
       STORAGE_ROOT: /app/storage
+      DATABASE_URL: postgresql://yolo:yolo@postgres:5432/yolo_training
       SECRET_KEY: ${SECRET_KEY:-dev-secret-change-in-production}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8000,http://127.0.0.1:8000}
     volumes:
       - yolo-storage:/app/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
 
   frontend:
@@ -27,3 +47,4 @@ services:
 
 volumes:
   yolo-storage:
+  pgdata:

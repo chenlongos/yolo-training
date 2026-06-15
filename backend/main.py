@@ -1,4 +1,4 @@
-"""FastAPI application — file-based storage, no database needed."""
+"""FastAPI application — PostgreSQL-backed storage."""
 
 import sys, os
 if __name__ == "__main__":
@@ -10,7 +10,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from backend.config import settings
+from backend.database import init_db
+from backend.store import _seed
 from backend.routes import projects, datasets, training, models, ws
+
+# Initialize database tables and seed default data
+init_db()
+_seed()
 
 app = FastAPI(title=settings.APP_NAME, version="0.1.0")
 
