@@ -13,8 +13,9 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     SECRET_KEY: str = "change-me-in-production-use-a-random-secret"
 
-    # Database
-    DATABASE_URL: str = "postgresql://yolo:yolo@localhost:5432/yolo_training"
+    # Database — defaults to SQLite for zero-dependency local dev;
+    # Docker Compose / production overrides this via DATABASE_URL env var.
+    DATABASE_URL: str = "sqlite:///./storage/app.db"
 
     # JWT Auth
     JWT_ALGORITHM: str = "HS256"

@@ -159,11 +159,15 @@ def list_models(project_id: str = Query(...), user: dict = Depends(get_current_u
                     "metrics": None,
                 })
 
-    # Also include DB children of pretrained models
+    # Also include DB children of pretrained models (dedup by parent+format)
     for child in db["trained_models"].all():
-        pid = child.get("parent_model_id", "")
+        pid = child.get("parent_model_id") or ""
         if pid.startswith("pretrained_"):
-            existing = any(m.get("id") == child["id"] for m in items)
+            existing = any(
+                m.get("id") == child["id"] or
+                (m.get("parent_model_id") == pid and m.get("format_type") == child.get("format_type"))
+                for m in items
+            )
             if not existing:
                 child_copy = dict(child)
                 child_copy["project_id"] = project_id
@@ -260,6 +264,8 @@ def _create_format_model(parent: dict, format_key: str, format_label: str, file_
         "status": "completed",
         "weights_path": file_path,
         "onnx_path": file_path if "onnx" in format_key and format_key != "cvimodel" else None,
+        "fp16_onnx_path": file_path if format_key == "fp16_onnx" else None,
+        "int8_onnx_path": file_path if format_key == "int8_onnx" else None,
         "cvimodel_path": file_path if format_key == "cvimodel" else None,
         "parent_model_id": parent["id"],
         "format_type": format_key,
@@ -287,10 +293,14 @@ def export_model(model_id: str, format: str = "onnx", user: dict = Depends(get_c
             adapter = ModelAdapter(weights)
             path = adapter.export(format_name="onnx", half=True)
             if not path: raise HTTPException(500, detail="FP16 export failed")
-            fp16_path = str(Path(path).parent / "best_fp16.onnx")
-            db["trained_models"].update(model_id, {"fp16_onnx_path": fp16_path})
-            child = _create_format_model(m, "fp16_onnx", "FP16", fp16_path)
-            return {"format": "fp16_onnx", "path": fp16_path, "download_url": f"/api/v1/models/{child['id']}/download/fp16_onnx", "model_id": child["id"]}
+            # Export produces e.g. best.onnx — rename to best_fp16.onnx
+            exported = Path(path)
+            fp16_path = exported.parent / f"{exported.stem}_fp16.onnx"
+            exported.rename(fp16_path)
+            fp16_path_str = str(fp16_path)
+            db["trained_models"].update(model_id, {"fp16_onnx_path": fp16_path_str})
+            child = _create_format_model(m, "fp16_onnx", "FP16", fp16_path_str)
+            return {"format": "fp16_onnx", "path": fp16_path_str, "download_url": f"/api/v1/models/{child['id']}/download/fp16_onnx", "model_id": child["id"]}
         except Exception as e:
             raise HTTPException(500, detail=f"FP16 export failed: {e}")
     if format == "cvimodel":
@@ -306,9 +316,20 @@ def export_model(model_id: str, format: str = "onnx", user: dict = Depends(get_c
     if format == "int8_onnx":
         onnx_path = m.get("onnx_path")
         if not onnx_path or not Path(onnx_path).exists():
-            onnx_path = export_model_to_onnx(model_id)
-            if not onnx_path:
-                raise HTTPException(500, detail="ONNX export failed first, cannot quantize")
+            # Export ONNX first (works for both DB models and pretrained)
+            weights = m.get("weights_path")
+            if not weights: raise HTTPException(400, detail="No weights available")
+            try:
+                from training_engine.adapter import ModelAdapter as _MA
+                _adapter = _MA(weights)
+                _result = _adapter.export(format_name="onnx")
+                # Export uses the source filename: best.pt -> best.onnx, yolov8n.pt -> yolov8n.onnx
+                onnx_path = str(Path(weights).with_suffix(".onnx"))
+                if not Path(onnx_path).exists():
+                    raise HTTPException(500, detail=f"ONNX export produced unexpected file")
+                db["trained_models"].update(model_id, {"onnx_path": onnx_path})
+            except Exception as e:
+                raise HTTPException(500, detail=f"ONNX export failed: {e}")
         try:
             from training_engine.adapter import ModelAdapter
             weights = m.get("weights_path")

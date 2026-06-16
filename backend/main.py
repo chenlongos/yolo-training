@@ -1,10 +1,11 @@
-"""FastAPI application — PostgreSQL-backed storage."""
+"""FastAPI application — SQLAlchemy-backed storage."""
 
 import sys, os
 if __name__ == "__main__":
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from pathlib import Path
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -14,11 +15,16 @@ from backend.database import init_db
 from backend.store import _seed
 from backend.routes import projects, datasets, training, models, ws
 
-# Initialize database tables and seed default data
-init_db()
-_seed()
 
-app = FastAPI(title=settings.APP_NAME, version="0.1.0")
+@asynccontextmanager
+async def lifespan(application: FastAPI):
+    """Initialize database tables and seed default data on startup."""
+    init_db()
+    _seed()
+    yield
+
+
+app = FastAPI(title=settings.APP_NAME, version="0.1.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
