@@ -7,6 +7,7 @@ import Sidebar from '../components/Sidebar';
 import ProjectSidebar, { type RightPanel } from '../components/ProjectSidebar';
 import AnnotationTool from '../components/AnnotationTool';
 import TrainingPage from './TrainingPage';
+import ClassManager from '../components/ClassManager';
 import Modal from '../components/Modal';
 import UploadPanel from './UploadPanel';
 import ImageGrid from './ImageGrid';
@@ -211,8 +212,8 @@ export default function Workspace() {
     projectData.images(activeProject, imgPage).then(d => { setImgList(d.items); setImgTotal(d.total); });
   }
 
-  async function handleTraining(config: { name: string; model: string; epochs: number; imgsz: number; batch: number; datasetId?: string }) {
-    const cfg = await trainApi.createConfig(activeProject, { ...config, name: config.name || 'train', base_model: config.model, device: '', workers: 4, optimizer: 'auto', lr0: 0.01, lrf: 0.01, momentum: 0.937, weight_decay: 0.0005, warmup_epochs: 3, augment: true, extra_args: {} });
+  async function handleTraining(config: { name: string; model: string; epochs: number; imgsz: number; batch: number; singleCls: boolean; datasetId?: string }) {
+    const cfg = await trainApi.createConfig(activeProject, { ...config, name: config.name || 'train', base_model: config.model, device: '', workers: 4, optimizer: 'auto', lr0: 0.01, lrf: 0.01, momentum: 0.937, weight_decay: 0.0005, warmup_epochs: 3, augment: true, single_cls: config.singleCls, extra_args: {} });
     const job = await trainApi.startJob({ model_config_id: cfg.id, dataset_id: config.datasetId || '', name: config.name || 'train' });
     setRightPanel('models');
     modelApi.list(activeProject).then(d => setModelList(d.items || [])).catch(() => {});
@@ -257,6 +258,21 @@ export default function Workspace() {
                 {rightPanel === 'train' && (
                   <TrainingPage
                     onStart={handleTraining} onClose={() => setRightPanel('models')} training={false} />
+                )}
+                {rightPanel === 'classes' && (
+                  <ClassManager
+                    classes={classes}
+                    onDelete={async (clsId) => {
+                      await projectData.deleteClass(clsId);
+                      setClasses(prev => prev.filter(c => c.id !== clsId));
+                    }}
+                    onAdd={async (name, color) => {
+                      await projectData.createClass(activeProject, { name, color });
+                      const updated = await projectData.classes(activeProject);
+                      setClasses(updated);
+                    }}
+                    onClose={() => setRightPanel('models')}
+                  />
                 )}
                 {rightPanel === 'upload' && <UploadPanel
                   sourceType={sourceType} carIp={carIp} camActive={camActive}

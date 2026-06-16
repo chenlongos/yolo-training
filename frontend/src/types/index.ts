@@ -44,6 +44,7 @@ export interface LabelClass {
   name: string;
   yolo_index: number;
   color: string;
+  annotation_count?: number;
 }
 
 export interface Annotation {

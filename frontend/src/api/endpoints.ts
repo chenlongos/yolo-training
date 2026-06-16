@@ -66,6 +66,7 @@ export const projectData = {
   classes: (projectId: string) => api.get(`/projects/${projectId}/classes`) as Promise<LabelClass[]>,
   createClass: (projectId: string, data: { name: string; color?: string }) =>
     api.post(`/projects/${projectId}/classes`, data) as Promise<LabelClass>,
+  deleteClass: (classId: string) => api.delete(`/classes/${classId}`),
   captureUrl: (projectId: string, url: string) =>
     api.post(`/projects/${projectId}/capture-url?url=${encodeURIComponent(url)}`),
 };

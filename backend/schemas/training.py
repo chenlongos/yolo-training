@@ -19,6 +19,7 @@ class ModelConfigCreate(BaseModel):
     weight_decay: float = Field(0.0005, ge=0, le=0.1)
     warmup_epochs: float = Field(3.0, ge=0)
     augment: bool = True
+    single_cls: bool = False
     extra_args: dict = Field(default_factory=dict)
 
 
@@ -39,6 +40,7 @@ class ModelConfigResponse(BaseModel):
     weight_decay: float
     warmup_epochs: float
     augment: bool
+    single_cls: bool = False
     created_at: str
 
     model_config = {"from_attributes": True}

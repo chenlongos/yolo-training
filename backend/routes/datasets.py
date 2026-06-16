@@ -186,12 +186,17 @@ def list_classes(dataset_id: str, user: dict = Depends(get_current_user)):
 def create_class(dataset_id: str, data: LabelClassCreate, user: dict = Depends(get_current_user)):
     _own_ds(dataset_id, user)
     existing = db["label_classes"].filter(lambda c: c["dataset_id"] == dataset_id)
-    return db["label_classes"].create({"dataset_id": dataset_id, "name": data.name, "yolo_index": len(existing), "color": data.color})
+    next_index = max([c["yolo_index"] for c in existing], default=-1) + 1
+    return db["label_classes"].create({"dataset_id": dataset_id, "name": data.name, "yolo_index": next_index, "color": data.color})
 
 @router.delete("/classes/{class_id}", status_code=204)
 def delete_class(class_id: str, user: dict = Depends(get_current_user)):
     cls = db["label_classes"].get(class_id)
     if cls: _own_ds(cls["dataset_id"], user)
+    # Check if class is in use by annotations
+    ann_count = len(db["annotations"].filter(lambda a: a["class_id"] == class_id))
+    if ann_count > 0:
+        raise HTTPException(400, detail=f"该类别被 {ann_count} 个标注使用，请先删除标注后再删除类别")
     db["label_classes"].delete(class_id)
 
 # Export
@@ -296,7 +301,15 @@ def project_list_images(project_id: str, page: int = Query(1, ge=1),
 def project_list_classes(project_id: str, user: dict = Depends(get_current_user)):
     _own_project(project_id, user)
     ds = resolve_project_dataset(project_id)
-    return db["label_classes"].filter(lambda c: c["dataset_id"] == ds["id"])
+    classes = db["label_classes"].filter(lambda c: c["dataset_id"] == ds["id"])
+    classes.sort(key=lambda c: c.get("yolo_index", 0))
+    # Attach annotation count for each class
+    result = []
+    for c in classes:
+        c = dict(c)
+        c["annotation_count"] = len(db["annotations"].filter(lambda a: a["class_id"] == c["id"]))
+        result.append(c)
+    return result
 
 
 @router.post("/projects/{project_id}/classes", status_code=201)
@@ -304,9 +317,10 @@ def project_create_class(project_id: str, data: LabelClassCreate, user: dict = D
     _own_project(project_id, user)
     ds = resolve_project_dataset(project_id)
     existing = db["label_classes"].filter(lambda c: c["dataset_id"] == ds["id"])
+    next_index = max([c["yolo_index"] for c in existing], default=-1) + 1
     return db["label_classes"].create({
         "dataset_id": ds["id"], "name": data.name,
-        "yolo_index": len(existing), "color": data.color,
+        "yolo_index": next_index, "color": data.color,
     })
 
 

@@ -125,6 +125,7 @@ class ModelConfig(Base):
     weight_decay = Column(Float, default=0.0005)
     warmup_epochs = Column(Float, default=3.0)
     augment = Column(Boolean, default=True)
+    single_cls = Column(Boolean, default=False)
     extra_args = Column(JSON, default=dict)
     created_at = Column(DateTime(timezone=True), default=_utcnow)
 

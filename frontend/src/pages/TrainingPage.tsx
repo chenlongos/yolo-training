@@ -3,7 +3,7 @@ import { Cpu, X } from 'lucide-react';
 import { withUser } from '../api/client';
 
 interface Props {
-  onStart: (c: { name: string; model: string; epochs: number; imgsz: number; batch: number; datasetId?: string }) => Promise<any>;
+  onStart: (c: { name: string; model: string; epochs: number; imgsz: number; batch: number; singleCls: boolean; datasetId?: string }) => Promise<any>;
   onClose: () => void;
   training: boolean;
 }
@@ -20,6 +20,7 @@ export default function TrainingPage({ onStart, onClose }: Props) {
   const [epochs, setEpochs] = useState(50);
   const [imgsz, setImgsz] = useState(640);
   const [batch, setBatch] = useState(16);
+  const [singleCls, setSingleCls] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -54,7 +55,7 @@ export default function TrainingPage({ onStart, onClose }: Props) {
   async function handleStart() {
     setLoading(true); setError('');
     try {
-      const result = await onStart({ name, model, epochs, imgsz, batch, datasetId: '' });
+      const result = await onStart({ name, model, epochs, imgsz, batch, singleCls, datasetId: '' });
       setTotalEpochs(epochs);
       setJobId(result?.id || 'unknown');
       setJobStatus('queued');
@@ -185,6 +186,14 @@ export default function TrainingPage({ onStart, onClose }: Props) {
               <input type="number" value={batch} onChange={e => setBatch(+e.target.value)} className={inp} />
               <p className="text-xs text-gray-400 mt-1">根据显存调整</p>
             </div>
+          </div>
+          <div className="mt-4">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={singleCls} onChange={e => setSingleCls(e.target.checked)}
+                className="w-4 h-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500" />
+              <span className="text-sm text-gray-700">单类别模式 (single_cls)</span>
+            </label>
+            <p className="text-xs text-gray-400 mt-1 ml-6">数据集只有一种物体时开启，可大幅提升检测效果</p>
           </div>
         </section>
 

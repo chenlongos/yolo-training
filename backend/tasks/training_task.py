@@ -77,6 +77,7 @@ def _run_training_impl(job_id: str, celery_task_id: str = ""):
         results = adapter.train(data=str(yaml_path), epochs=total_epochs, imgsz=cfg.get("imgsz", 640),
                                 batch=cfg.get("batch", 16), device=cfg.get("device", ""),
                                 project=str(model_out), name="train", workers=cfg.get("workers", 8),
+                                single_cls=cfg.get("single_cls", False),
                                 callbacks={"on_fit_epoch_end": on_fit_epoch_end})
 
         # Update model

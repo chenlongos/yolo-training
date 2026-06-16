@@ -110,13 +110,14 @@ class ModelAdapter:
         project: str,
         name: str,
         workers: int,
+        single_cls: bool = False,
         callbacks: dict | None = None,
     ) -> Any:
         device = _resolve_device(device)
         kwargs: dict[str, Any] = dict(
             data=data, epochs=epochs, imgsz=imgsz, batch=batch,
             device=device, project=project, name=name, workers=workers,
-            plots=False,
+            plots=False, single_cls=single_cls,
         )
         # Register callbacks via model.add_callback(), then remove 'callbacks'
         # from model.overrides — ultralytics' train() merges self.overrides into
