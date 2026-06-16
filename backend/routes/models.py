@@ -4,9 +4,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File
 from fastapi.responses import FileResponse
 from backend.store import db
-from backend.schemas.training import TrainedModelResponse
 from backend.dependencies import get_current_user
-from backend.services.model_service import export_model_to_onnx, get_model_formats
 from backend.services.storage_service import storage_service
 
 router = APIRouter(prefix="/api/v1/models", tags=["models"])
@@ -110,13 +108,15 @@ def list_models(project_id: str = Query(...), user: dict = Depends(get_current_u
                     "weights_path": str(pt_file), "format_type": "pretrained",
                     "metrics": None,
                 })
-        # Auto-discover exported format files in pretrained dir
+        # Auto-discover exported format files in pretrained dir.
+        # If a DB child already exists for the same parent+format, update it
+        # with the current disk path (disk wins). Otherwise create a synthetic entry.
         pretrained_ids = {f"pretrained_{f.stem}" for f in pretrained_dir.glob("*.pt")}
         for fmt_file in pretrained_dir.glob("*"):
             if fmt_file.suffix == ".pt":
                 continue
             # Determine format type from extension/path
-            fmt_name = fmt_file.name  # full filename with extension
+            fmt_name = fmt_file.name
             if "_fp16" in fmt_name or "fp16" in fmt_name:
                 fmt_type = "fp16_onnx"
                 label = "FP16"
@@ -142,12 +142,28 @@ def list_models(project_id: str = Query(...), user: dict = Depends(get_current_u
             parent_id = f"pretrained_{base_name}"
             if parent_id not in pretrained_ids:
                 continue
-            # Check if already in list or DB
-            existing = any(
+
+            # Find existing DB child for this parent+format, or existing synthetic in items
+            existing_db = db["trained_models"].filter(
+                lambda m: str(m.get("parent_model_id")) == parent_id and m.get("format_type") == fmt_type
+            )
+            existing_item = any(
                 m.get("parent_model_id") == parent_id and m.get("format_type") == fmt_type
                 for m in items
             )
-            if not existing:
+
+            if existing_db:
+                # Disk file exists, DB record exists — update DB to match disk
+                db_child = existing_db[0]
+                path_key = {"onnx": "onnx_path", "fp16_onnx": "fp16_onnx_path",
+                            "int8_onnx": "int8_onnx_path"}.get(fmt_type, "weights_path")
+                db["trained_models"].update(db_child["id"], {path_key: str(fmt_file), "weights_path": str(fmt_file)})
+                updated = db["trained_models"].get(db_child["id"])
+                if updated and not any(m.get("id") == updated["id"] for m in items):
+                    updated["project_id"] = project_id
+                    items.append(updated)
+            elif not existing_item:
+                # No DB record, no synthetic yet — create synthetic entry
                 items.append({
                     "id": f"pretrained_{base_name}_{fmt_type}",
                     "project_id": project_id,
@@ -159,19 +175,21 @@ def list_models(project_id: str = Query(...), user: dict = Depends(get_current_u
                     "metrics": None,
                 })
 
-    # Also include DB children of pretrained models (dedup by parent+format)
+    # Add DB children of pretrained models that don't have a matching disk file
     for child in db["trained_models"].all():
         pid = child.get("parent_model_id") or ""
-        if pid.startswith("pretrained_"):
-            existing = any(
-                m.get("id") == child["id"] or
-                (m.get("parent_model_id") == pid and m.get("format_type") == child.get("format_type"))
-                for m in items
-            )
-            if not existing:
-                child_copy = dict(child)
-                child_copy["project_id"] = project_id
-                items.append(child_copy)
+        if not pid.startswith("pretrained_"):
+            continue
+        fmt = child.get("format_type")
+        # Skip if already represented by a disk file (handled above)
+        has_disk = any(
+            m.get("parent_model_id") == pid and m.get("format_type") == fmt
+            for m in items
+        )
+        if not has_disk and not any(m.get("id") == child["id"] for m in items):
+            child_copy = dict(child)
+            child_copy["project_id"] = project_id
+            items.append(child_copy)
 
     return {"items": items, "total": len(items)}
 
@@ -280,11 +298,25 @@ def _create_format_model(parent: dict, format_key: str, format_label: str, file_
 def export_model(model_id: str, format: str = "onnx", user: dict = Depends(get_current_user)):
     m = _own_model(model_id, user)
     if format == "onnx":
-        path = export_model_to_onnx(model_id)
-        if not path: raise HTTPException(500, detail="ONNX export failed")
-        # Also create a child model for the ONNX format
-        child = _create_format_model(m, "onnx", "ONNX", path)
-        return {"format": "onnx", "path": path, "download_url": f"/api/v1/models/{child['id']}/download/onnx", "model_id": child["id"]}
+        try:
+            from training_engine.adapter import ModelAdapter
+            weights = m.get("weights_path")
+            if not weights: raise HTTPException(400, detail="No weights available")
+            if not Path(weights).exists():
+                raise HTTPException(400, detail=f"Weights file not found: {weights}")
+            adapter = ModelAdapter(weights)
+            result = adapter.export(format_name="onnx")
+            if not result: raise HTTPException(500, detail="ONNX export returned no result")
+            onnx_path = str(Path(weights).with_suffix(".onnx"))
+            if not Path(onnx_path).exists():
+                raise HTTPException(500, detail=f"ONNX file was not created at expected path: {onnx_path}")
+            db["trained_models"].update(model_id, {"onnx_path": onnx_path})
+            child = _create_format_model(m, "onnx", "ONNX", onnx_path)
+            return {"format": "onnx", "path": onnx_path, "download_url": f"/api/v1/models/{child['id']}/download/onnx", "model_id": child["id"]}
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(500, detail=f"ONNX export failed: {e}")
     if format == "fp16_onnx":
         try:
             from training_engine.adapter import ModelAdapter
